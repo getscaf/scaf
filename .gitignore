@@ -384,6 +384,7 @@ dist
 *.tfvars.json
 
 .direnv
+.envrc
 
 # nix-build output
 result

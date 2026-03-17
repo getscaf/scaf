@@ -47,6 +47,8 @@ nix-shell -p "(with import <nixpkgs> {}; callPackage (builtins.fetchTarball http
 
 ## Creating a new project using this repo
 
+First, copy (& optionally customize) the `.envrc.example` file to `.envrc`!
+
 Run `scaf myproject`, answer all the questions, and you'll have your new
 project!
 

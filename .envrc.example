@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if type nix >/dev/null 2>&1; then
+    use flake
+else
+    echo "nix is not available, please install Nix or run the environment manually."
+fi
+
+# vim: syntax=bash
