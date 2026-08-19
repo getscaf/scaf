@@ -64,14 +64,16 @@ The following are intentionally out of scope for v1:
 When a user runs:
 
 ```bash
-scaf create <repo>
+scaf create <parent-repo> <destination> [--vcs-ref <ref>]
 ```
 
-Scaf resolves the template repository and checks its root:
+Scaf resolves the template repository and checks its root. A relative local `<parent-repo>` argument is resolved against the invocation working directory before dispatch:
 
 1. If `scaf.yaml` is present and valid, Scaf uses the Compose pipeline.
 2. If `scaf.yaml` is absent, Scaf uses the existing single-template Copier flow.
 3. If `scaf.yaml` is present but invalid, Scaf fails with `ScafValidationError`. It must not silently fall back to single-template mode.
+
+Compose mode requires the parent and every child to resolve to a Git commit. The existing single-template flow may still use a non-Git local directory. If a local directory contains `scaf.yaml` but does not satisfy the Compose Git-source rules in §4.3, Scaf raises `ScafResolveError`; it must not fall back to single-template mode.
 
 ---
 
@@ -93,12 +95,12 @@ The parent `copier.yaml` defines all user-facing questions. The parent `scaf.yam
 ## 4. `scaf.yaml` Schema
 
 ```yaml
-_min_scaf_version: "1.0.0"
+_min_scaf_version: "1.0.0"  # optional SemVer 2.0 minimum
 
 dependencies:
   - name: <string>              # required, unique
     repo: <string>              # required
-    ref: <string>               # optional branch/tag/commit/version selector
+    ref: <string>               # optional branch, tag, or commit
     answers:                    # optional child answer mapping
       <child_question>: <literal_or_jinja>
     exclude:                    # removed entirely from Compose processing
@@ -136,9 +138,24 @@ Invalid paths include:
 - paths with platform-specific separators such as `\\`
 - empty paths
 
-Glob semantics should match Python `pathlib.PurePath.match()` unless Scaf already has a documented glob engine. The implementation must document whichever engine it uses.
+Scaf normalizes each candidate to a POSIX relative path and matches each glob against the entire normalized path from the applicable render or project root. Matching is case-sensitive and implicitly root-anchored; it is not suffix matching.
 
-### 4.2 Dependency Fields
+Glob operators have these semantics:
+
+- `*` matches zero or more characters within one path segment.
+- `?` matches one character within one path segment.
+- `[abc]` and `[!abc]` match character classes within one path segment.
+- A `**` path segment matches zero or more complete path segments.
+
+Therefore, `README.md` matches only the root-level file, `docs/*.md` matches Markdown files directly under root-level `docs/`, and `**/README.md` matches root-level and nested copies. Implementations may use any glob engine only if it reproduces these semantics; they must not expose the right-anchored suffix behavior of `pathlib.PurePath.match()`.
+
+### 4.2 Minimum Scaf Version
+
+`_min_scaf_version` is optional. When present, it must be a SemVer 2.0.0 string. Scaf compares it with the running Scaf version using SemVer precedence, including prerelease ordering and ignoring build metadata.
+
+If the value is malformed or the running version is lower, Scaf raises `ScafValidationError` immediately after parsing `scaf.yaml` and before prompting, resolving children, or rendering. An omitted field imposes no minimum.
+
+### 4.3 Dependency Fields
 
 #### `name`
 
@@ -150,13 +167,32 @@ Required. A unique identifier for the child. It is used:
 
 #### `repo`
 
-Required. Any repository reference Scaf can already resolve for Copier templates.
+Required. A Git repository reference Scaf can resolve through Copier. Remote Git references and local Git repositories are valid. A local working tree must have a `HEAD` commit and no tracked, staged, or untracked changes; Scaf must not lock Copier's synthetic snapshot of a dirty tree.
+
+Local path bases are explicit:
+
+- A relative local `<parent-repo>` CLI argument is resolved against the invocation working directory and stored as a canonical absolute path.
+- A relative dependency `repo` is resolved against the root of the resolved parent template containing `scaf.yaml`, never against the invocation directory or destination. The manifest preserves that normalized parent-relative locator so update can resolve it against the candidate parent root.
+- An absolute dependency `repo` is canonicalized and stored as an absolute path.
+
+The lock records each source's resolved commit. Update resolves the stored parent path or the candidate parent's dependency path again; a missing path, non-Git directory, dirty working tree, or missing `HEAD` raises `ScafResolveError` without falling back to the previous lock. Non-Git local directories remain supported only by the existing single-template fallback.
 
 #### `ref`
 
-Optional. A branch, tag, commit, or version selector supported by Scaf's existing repository resolver.
+Optional. A branch, tag, or commit accepted by Scaf's existing repository resolver. Scaf Compose v1 does not interpret semantic-version ranges in this field; values such as `~1.0` are passed as literal refs and are invalid unless a repository actually has a ref with that name.
 
-The field is intentionally named `ref`, not `version`, because v1 must not imply semver behavior unless Scaf's resolver already supports it.
+For a Git source with no `ref`, Scaf preserves Copier 8.1's resolver default: select the highest non-prerelease tag whose name is valid under PEP 440, or `HEAD` when no such tag exists. Sorting release tags is resolver behavior, not support for range expressions.
+
+Scaf classifies an explicit selector before passing it to Copier:
+
+- `refs/heads/<name>` is a branch selector.
+- `refs/tags/<name>` is a tag selector.
+- `HEAD` is a moving selector governed by the branch movement rules.
+- For any other value, Scaf queries the source's branch and tag refs. Exactly one match determines the kind. If both `refs/heads/<name>` and `refs/tags/<name>` exist, Scaf raises `ScafResolveError` and requires a fully qualified ref. If neither exists but the value resolves directly to a commit object, Scaf classifies it as a commit selector and stores the full object ID; otherwise resolution fails.
+
+Scaf never silently prefers a tag over a same-named branch or vice versa. The same rules apply to the parent `--vcs-ref`, and the resulting selector kind is persisted in `lock.yml`.
+
+The field is intentionally named `ref`, not `version`, because v1 does not add semver-range behavior to Scaf's resolver.
 
 #### `answers`
 
@@ -215,7 +251,11 @@ Binary files matched by `context` appear in `scaf.children.<name>.paths` but not
 
 The parent template's `copier.yaml` defines every user-facing question and its order. Child questions are never automatically exposed to the user in v1.
 
-If a parent wants the user to choose a value used by a child, the parent must define its own question and map that answer into the child:
+If a parent wants the user to choose a value used by a child, the parent must define its own question and map that answer into the child.
+
+All `getscaf/copier-*` repository names used in examples are illustrative contract fixtures. Their full HTTPS `.git` form demonstrates Copier-recognized source syntax, but the document does not claim those names are reachable repositories.
+
+For example:
 
 ```yaml
 # parent copier.yaml
@@ -229,7 +269,7 @@ linter:
 # scaf.yaml
 dependencies:
   - name: python
-    repo: github.com/getscaf/copier-python
+    repo: https://github.com/getscaf/copier-python.git
     answers:
       linter: "{{ linter }}"
 ```
@@ -321,7 +361,8 @@ compose:
 Rules:
 
 - The parent template must render the target path.
-- The parent file may be static or Jinja-templated.
+- A static parent file may be UTF-8 text or binary and is copied byte-for-byte.
+- A Jinja-templated parent file must be UTF-8 text; Scaf does not attempt to decode or template binary content.
 - Missing parent output is a validation error.
 - If both `template/<path>` and `template/<path>.jinja` would render the same final path, Scaf raises `ScafValidationError`.
 
@@ -350,7 +391,8 @@ Rules:
 - The target must be UTF-8 text in every source.
 - Binary files cannot use `concat`.
 - There is no implicit dependency-order fallback.
-- `dedupe_lines`, when enabled, removes duplicate lines while preserving first occurrence across the full result after header, source concatenation, and separator insertion.
+- `dedupe_lines`, when enabled, processes only the source bodies in `sources` order and removes duplicate lines while preserving their first occurrence across those bodies.
+- Deduplication happens before Scaf inserts `header` or joins the processed bodies with `separator`. Header and separator text is structural and is never deduplicated.
 
 Good uses include `.gitignore` and `.env.example`. Do not use `concat` for semantically structured dependency files where entries can conflict.
 
@@ -382,7 +424,7 @@ Use `prefer` when one child is authoritative for the path.
 The Compose pipeline has six phases:
 
 ```text
-Resolve → Render Children → Render Parent → Compose → Assemble → Persist State
+Resolve → Render Children → Render Parent → Compose → Stage → Commit
 ```
 
 ### 8.1 Phase 1: Resolve
@@ -425,17 +467,33 @@ Scaf evaluates compose rules and builds a complete ownership map.
 
 At the end of this phase, every final output path must have exactly one owner. If a path has zero owners due to an invalid rule, or multiple candidate owners due to conflict, Scaf fails before assembly.
 
-### 8.5 Phase 5: Assemble
+### 8.5 Phase 5: Stage
 
-Scaf writes the final project from the resolved ownership map.
+Scaf builds a complete candidate from the resolved ownership map before it mutates the destination.
 
-For `create`, Scaf should assemble in a staging area and move into place only after validation succeeds. Failure should leave no partial project directory where feasible.
+For `create`, the required `<destination>` argument names the final project directory. A relative destination is resolved from the current working directory; an absolute destination is used as given. Scaf does not derive it from `project_name` or another answer.
 
-For `update`, Scaf must not commit state changes until managed file reconciliation succeeds.
+Scaf must fail with `ScafValidationError` before rendering if the destination already exists. It assembles all managed output and the complete candidate `.scaf/` metadata in a sibling staging directory on the same filesystem. Scaf itself does not write the destination during staging; the separate limits for unsandboxed parent-task side effects are defined in §12.3.
 
-### 8.6 Phase 6: Persist State
+For `update`, Scaf computes the full reconciliation plan and checks every conflict before changing any project file. It then prepares `.scaf/transactions/<id>.prepared/` with:
 
-Scaf writes `.scaf/` metadata after successful assembly or update reconciliation.
+- a machine-readable operation plan
+- byte-for-byte content and mode backups for every file to replace or delete
+- records of paths that the candidate will create
+- the previous manifest, lock, answers, and state
+- the complete candidate manifest, lock, answers, and state
+
+Scaf writes the journal to `.scaf/transactions/.<id>.tmp/` and atomically renames it to `<id>.prepared/` only when complete. The prepared journal must exist before the first project mutation. Journal preparation failure removes the temporary journal, raises `ScafTransactionError`, and leaves managed files and persisted state unchanged.
+
+### 8.6 Phase 6: Commit
+
+For `create`, Scaf renames the fully staged directory to the destination only after rendering, validation, state generation, and permitted parent tasks succeed. The same-filesystem directory rename is the commit point. If an earlier step fails, Scaf removes the staging directory and re-raises that error with its original class and context. If the final rename fails, Scaf removes staging and raises `ScafTransactionError` with the source and destination paths. Scaf performs no managed destination write before the commit rename and never falls back to piecemeal copying. This guarantee does not claim to undo writes that an unsandboxed parent task makes outside staging.
+
+For `update`, Scaf applies the prepared plan with same-directory temporary files and atomic file renames, and it writes the candidate `.scaf/` metadata as part of that same recoverable transaction. After every operation is durable, Scaf atomically renames `<id>.prepared/` to `<id>.committed/`. That same-parent directory rename is the commit marker.
+
+A write, rename, delete, mode-change, or state-persistence failure triggers rollback at this transaction boundary. Scaf restores every backed-up path and the previous `.scaf/` metadata and removes newly created paths without deleting backup data during rollback. After restoration is durable, it atomically renames `<id>.prepared/` to `<id>.aborted/` and may recursively clean up that directory. Scaf then raises `ScafTransactionError` with the failed operation and path. It must not continue with a partial update or silently retain mixed candidate and previous state. If rollback also fails, Scaf retains the `.prepared` journal and reports both failures.
+
+Before `scaf update` or `scaf status` does other work, it checks journal directory suffixes. A `.prepared` journal is rolled back idempotently. A `.committed` or `.aborted` journal is terminal and receives cleanup only; recursive cleanup never changes its suffix, so a crash during deletion cannot make it look uncommitted. A `.tmp` journal predates project mutation and can be removed. Recovery failure raises `ScafTransactionError` and blocks further mutation until recovery succeeds.
 
 ---
 
@@ -549,21 +607,22 @@ Scaf stores local state under `.scaf/`:
 ├── manifest.yml
 ├── lock.yml
 ├── state.json
-└── answers/
-    ├── parent.yml
-    ├── python.yml
-    └── docker.yml
+├── answers/
+│   ├── parent.yml
+│   ├── python.yml
+│   └── docker.yml
+└── transactions/  # present only while an update commit or recovery is pending
 ```
 
 ### 10.1 `manifest.yml`
 
-A normalized snapshot of the effective `scaf.yaml` used for the last successful run. It records requested dependency selectors, output classification, and compose rules.
+A normalized snapshot of the effective `scaf.yaml` used for the last successful run. It also records the parent repository, the requested parent ref, requested dependency refs, output classification, and compose rules. Requested refs remain distinct from the exact commits in `lock.yml`.
 
 Manual edits to `.scaf/manifest.yml` are unsupported in v1.
 
 ### 10.2 `lock.yml`
 
-Records exact resolved parent and child refs or commits used for the last successful run.
+Records the full resolved Git commit object ID for the parent and every child used by the last successful run. Each entry also records whether the requested selector was omitted, a branch, an explicit tag, or a commit so update can enforce the corresponding movement rules. For an omitted selector, the entry records the selected release tag name or `HEAD` as well as the commit.
 
 ### 10.3 `answers/`
 
@@ -580,6 +639,10 @@ Stores per-managed-file metadata needed for update reconciliation, including:
 - file mode and executable bit
 - binary/text classification when needed
 
+### 10.5 `transactions/`
+
+Stores the update journals described in §8.5–§8.6. Directory suffixes encode atomic transaction state: `.tmp`, `.prepared`, `.committed`, or `.aborted`. The directory is normally absent or empty and is never treated as user-editable project state.
+
 A Scaf-composed project is not a valid target for native `copier update`. Composed projects must be updated with `scaf update`.
 
 ---
@@ -588,30 +651,53 @@ A Scaf-composed project is not a valid target for native `copier update`. Compos
 
 `scaf update` does not call child `copier update`. It renders a fresh candidate project from stored Compose state, then reconciles that candidate against the current working tree using `.scaf/state.json`.
 
-### 11.1 Update Steps
+### 11.1 Ref Resolution Policy
 
-1. Load `.scaf/manifest.yml`, `.scaf/lock.yml`, `.scaf/state.json`, and stored answers.
-2. Resolve the parent and child refs according to Scaf's update policy.
-3. Render a fresh candidate project in temporary space.
-4. Build the candidate ownership map and validate it.
-5. Compare candidate managed files against current working tree files and previous managed state.
-6. Apply safe updates.
-7. Write new `.scaf/` state only after file reconciliation succeeds.
+The manifest stores requested refs; the lock stores the exact commits produced by resolving them during the last successful run.
 
-### 11.2 Safe Update Rules
+On every update, Scaf:
+
+1. Uses the stored requested parent ref unless the user supplies `--vcs-ref <branch-or-tag-or-commit>`. A supplied ref replaces the stored requested parent ref only after the whole update succeeds.
+2. If the effective parent selector remains omitted and its lock entry records a selected release tag, resolves that recorded tag directly and verifies that it still points to the locked commit.
+3. Resolves the requested parent ref through the same repository resolver used by `scaf create`. An omitted parent ref uses Copier 8.1's default: the highest non-prerelease PEP 440-valid tag, or `HEAD` when the repository has no such tag.
+4. Loads `scaf.yaml` from that resolved parent and treats it as the candidate manifest. This lets a newer parent ref change child refs and composition policy.
+5. For each candidate child whose name and repository match its previous manifest entry, if both selectors are omitted and the lock records a selected release tag, resolves that recorded tag directly and verifies its commit before selecting the current default.
+6. Resolves every child `ref` in the candidate manifest. An omitted child ref uses the same highest-release-or-`HEAD` rule.
+7. Renders and reconciles the whole candidate graph. Updating one requested ref never performs a partial child update.
+
+A branch selector may advance on a plain `scaf update`. An omitted selector may advance when the resolver selects a different, higher PEP 440 release tag, or when `HEAD` advances in a repository with no valid release tags. A commit selector cannot advance. Every selected tag is immutable within a project: before an omitted selector may advance, Scaf verifies the previously selected tag against its locked commit. A missing or moved previous tag, or an explicit tag that resolves differently from its lock entry, raises `ScafResolveError` and identifies the tag instead of accepting new output.
+
+Explicit tags are literal Git refs and never mean a compatible range. To move the parent to a different tag or commit, the user supplies a different `--vcs-ref`. To move a child to a different tag or commit, the parent template must publish a `scaf.yaml` with the new child ref, and the user selects a parent ref containing that change. Per-child CLI ref overrides remain out of scope for v1.
+
+If any requested ref cannot be resolved, Scaf raises `ScafResolveError` before rendering. It must not fall back to the previous lock. Failed resolution or reconciliation leaves the previous manifest, lock, answers, and state unchanged.
+
+### 11.2 Update Steps
+
+1. Recover or clean up any existing transaction journal as required by §8.6.
+2. Load `.scaf/manifest.yml`, `.scaf/lock.yml`, `.scaf/state.json`, and stored answers.
+3. Apply the ref resolution policy in §11.1 and load the candidate parent manifest.
+4. Render a fresh candidate project in temporary space.
+5. Build the candidate ownership map and validate it.
+6. Compute the complete reconciliation plan and check every path for conflicts without mutating the project.
+7. Prepare the rollback journal with previous bytes, modes, state, and the candidate state.
+8. Commit managed-file and `.scaf/` metadata changes through the transaction boundary in §8.6.
+9. After all candidate data is durable, atomically rename the journal from `.prepared` to `.committed`, then clean up the terminal journal without changing that suffix.
+
+### 11.3 Safe Update Rules
 
 For each managed file:
 
-1. If current content and mode equal previous managed content and mode, replace with candidate.
-2. If current differs from previous, but candidate equals previous, preserve current local edits.
-3. If current, previous, and candidate all differ, raise `ScafUpdateConflictError`.
-4. If the candidate deletes a managed file and current equals previous, delete it.
-5. If the candidate deletes a managed file and current has local edits, raise `ScafUpdateConflictError`.
-6. If the candidate introduces a new managed path that would overwrite an unmanaged local file, raise `ScafUpdateConflictError` unless contents and mode are identical.
+1. If current content and mode equal previous managed content and mode, replace with candidate and record candidate state.
+2. If current content and mode equal candidate but differ from previous, leave the file unchanged and record candidate as the new managed state.
+3. If current differs from previous, but candidate equals previous, preserve current local edits and retain previous managed state.
+4. If current, previous, and candidate are pairwise different, raise `ScafUpdateConflictError`.
+5. If the candidate deletes a managed file and current equals previous, delete it.
+6. If the candidate deletes a managed file and current has local edits, raise `ScafUpdateConflictError`.
+7. If the candidate introduces a new managed path that would overwrite an unmanaged local file, raise `ScafUpdateConflictError` unless contents and mode are identical.
 
 This update model is intentionally conservative. It favors preserving user edits and surfacing conflicts over attempting semantic merges.
 
-### 11.3 Parent Tasks During Update
+### 11.4 Parent Tasks During Update
 
 Parent `_tasks` do not run during `scaf update` in v1. Task side effects are not tracked as Scaf-managed output and may cause future update conflicts.
 
@@ -639,11 +725,18 @@ Supported to the extent Copier supports them during non-interactive rendering:
 1. Child `_tasks` are not run.
 2. Child-native `copier update` semantics are not preserved.
 3. Child behavior that assumes direct rendering into the final assembled project is unsupported.
-4. `_skip_if_exists` has no special Compose update semantics; Scaf uses its own managed-file reconciliation.
+4. Non-Git local directories and dirty local Git working trees are unsupported as Compose parents or children.
+5. `_skip_if_exists` has no special Compose update semantics; Scaf uses its own managed-file reconciliation.
 
 ### 12.3 Parent Tasks
 
-Parent `_tasks`, if any, run once after successful `scaf create` assembly. They do not run during `scaf update` in v1.
+Parent `_tasks`, if any, run once in the staged project after managed output and candidate `.scaf/` state are complete but before the create commit rename. They do not run during `scaf update` in v1.
+
+Copier 8.1 runs these tasks as ordinary subprocesses with the invoking user's permissions and the staging root as their working directory. Scaf does not sandbox them. Template authors must confine task writes to staging; writes to the destination by absolute path or to any other external path are unsupported and cannot be detected or rolled back reliably.
+
+A task's in-staging file side effects are not added to managed state. A task-created file remains unmanaged, and a task modification to a managed file appears as a local modification during the first update. Tasks must not modify staged `.scaf/` metadata; Scaf checks it after tasks and raises `ScafTemplateError` if it changed.
+
+A non-zero exit, signal, or forbidden metadata change aborts create. At this process boundary, Scaf stops before later tasks or the commit rename, removes the staging directory, and raises `ScafTemplateError` with the task command and exit or signal details. External task side effects may remain; Scaf reports them when known but must not delete or rewrite paths it did not create through the staged pipeline.
 
 ---
 
@@ -653,25 +746,31 @@ Scaf Compose prioritizes clear, actionable errors. Errors should explain what ha
 
 ### 13.1 Error Classes
 
-- `ScafValidationError` — invalid manifest, invalid paths, invalid strategy configuration.
+- `ScafValidationError` — invalid manifest, invalid paths or destination, invalid strategy configuration, or an incompatible Scaf version.
+- `ScafResolveError` — a parent or child repository ref cannot be resolved.
 - `ScafAnswerError` — unresolved child answer.
 - `ScafConflictError` — ambiguous final path ownership.
-- `ScafTemplateError` — parent render or context/filter error.
+- `ScafTemplateError` — parent render, parent task, or context/filter error.
 - `ScafUpdateConflictError` — safe update reconciliation cannot proceed.
+- `ScafTransactionError` — a staged create commit, update commit, rollback, or recovery operation fails.
 
 ### 13.2 Parse/Resolve-Time Validation
 
 Scaf validates:
 
-1. Duplicate dependency names.
-2. Unknown top-level or strategy-specific fields.
-3. Invalid paths and globs.
-4. Unknown compose strategies.
-5. Missing required strategy fields.
-6. `concat.sources` references known children.
-7. `prefer.source` references a known child.
-8. `answers` keys reference real child questions where resolvable.
-9. Jinja in `answers` references only allowed variables.
+1. `_min_scaf_version` is valid and satisfied when present.
+2. Duplicate dependency names.
+3. Unknown top-level or strategy-specific fields.
+4. Invalid paths and globs.
+5. Unknown compose strategies.
+6. Missing required strategy fields.
+7. `concat.sources` references known children.
+8. `prefer.source` references a known child.
+9. `answers` keys reference real child questions where resolvable.
+10. Jinja in `answers` references only allowed variables.
+11. The parent and every child source resolve to stable Git commits; local working trees are clean.
+12. Every explicit parent and child selector has an unambiguous branch, tag, or commit classification.
+13. The `create` destination does not already exist.
 
 ### 13.3 Render/Compose-Time Validation
 
@@ -682,7 +781,7 @@ Scaf validates:
 3. Every parent/child overlap has a compose rule.
 4. `render` rules produce the target parent output path.
 5. `concat` sources all produce the target path as UTF-8 text.
-6. Binary paths use only `prefer` or pass-through ownership.
+6. Binary paths use pass-through ownership, `prefer`, or `render` backed by a static parent file copied byte-for-byte. Binary paths cannot use `concat` or a Jinja-templated parent file.
 7. Missing context keys fail under strict undefined behavior.
 8. New managed paths do not overwrite unmanaged local files during update.
 
@@ -760,12 +859,14 @@ If this section is optional, pass required=False.
 ### 14.1 Commands
 
 ```bash
-scaf create <parent-repo> [--answers-file <path>] [--defaults]
-scaf preview <parent-repo> [--answers-file <path>] [--defaults]
+scaf create <parent-repo> <destination> [--vcs-ref <ref>] [--answers-file <path>] [--defaults]
+scaf preview <parent-repo> [--vcs-ref <ref>] [--answers-file <path>] [--defaults]
 scaf validate <parent-repo-or-path> [--offline]
-scaf update
+scaf update [--vcs-ref <ref>]
 scaf status
 ```
+
+For `create`, `<destination>` is always explicit and follows the assembly rules in §8.5 for both Compose parents and the existing single-template fallback. `--vcs-ref` selects the parent branch, tag, or commit; when omitted, the parent uses Copier 8.1's highest-release-or-`HEAD` default. On `update`, `--vcs-ref` replaces the stored requested parent ref only after a successful reconciliation.
 
 ### 14.2 `scaf preview`
 
@@ -783,12 +884,12 @@ Dry-runs enough of the pipeline to show:
 Example:
 
 ```text
-Scaf Preview — github.com/myorg/fullstack-python-template
+Scaf Preview — https://github.com/myorg/fullstack-python-template.git
 
 Children:
-  python   github.com/getscaf/copier-python   ref ~1.0
-  docker   github.com/getscaf/copier-docker   ref ~2.0
-  ci       github.com/getscaf/copier-github-actions ref ~0.3
+  python   https://github.com/getscaf/copier-python.git          ref v1.0.3
+  docker   https://github.com/getscaf/copier-docker.git          ref v2.0.1
+  ci       https://github.com/getscaf/copier-github-actions.git  ref v0.3.2
 
 Required compose paths:
   README.md    → render   ✓ parent owns output
@@ -837,9 +938,9 @@ These may be added after the v1 ownership and state model has proven stable.
 
 ---
 
-## 15. Worked Example
+## 15. Worked Composition Example
 
-A parent template composes a Python library template, a Docker template, and a GitHub Actions CI template.
+A parent template composes a Python library template, a Docker template, and a GitHub Actions CI template. The repository names and tags below are illustrative contract fixtures, not a network smoke test. They use URL and ref forms that Copier 8.1 recognizes; a runnable template must substitute reachable Git repositories and tags that implement the shown questions and output contract.
 
 ### 15.1 Parent Template Structure
 
@@ -861,8 +962,8 @@ _min_scaf_version: "1.0.0"
 
 dependencies:
   - name: python
-    repo: github.com/getscaf/copier-python
-    ref: "~1.0"
+    repo: https://github.com/getscaf/copier-python.git
+    ref: "v1.0.3"
     answers:
       project_name: "{{ project_name }}"
       python_version: "{{ python_version }}"
@@ -875,8 +976,8 @@ dependencies:
       - Makefile
 
   - name: docker
-    repo: github.com/getscaf/copier-docker
-    ref: "~2.0"
+    repo: https://github.com/getscaf/copier-docker.git
+    ref: "v2.0.1"
     answers:
       project_name: "{{ project_name }}"
       base_image: "python:{{ python_version }}-slim"
@@ -888,8 +989,8 @@ dependencies:
       - Makefile
 
   - name: ci
-    repo: github.com/getscaf/copier-github-actions
-    ref: "~0.3"
+    repo: https://github.com/getscaf/copier-github-actions.git
+    ref: "v0.3.2"
     answers:
       project_name: "{{ project_name }}"
       language: "python"
@@ -983,10 +1084,10 @@ help: ## Show this help message
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \\033[36m%-20s\\033[0m %s\n", $$1, $$2}'
 ```
 
-### 15.6 Why This Is Valid
+### 15.6 Why This Composition Is Valid
 
-1. Child `README.md` and `Makefile` files are suppressed, so they are not emitted automatically.
-2. Those files are explicitly allowlisted in `context`, so parent templates can read them.
+1. Root-level child `README.md` and `Makefile` files are suppressed, so they are not emitted automatically; the root-relative bare globs do not affect nested files with the same names.
+2. Those root-level files are explicitly allowlisted in `context`, so parent templates can read them.
 3. Final `README.md` and `Makefile` are explicitly owned by `strategy: render` rules.
 4. `.gitignore` is explicitly owned by `strategy: concat` with ordered sources.
 5. All final output paths have exactly one owner.
