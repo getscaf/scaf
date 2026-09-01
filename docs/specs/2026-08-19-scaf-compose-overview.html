@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Concrete Scaf Compose examples that trace child files through compose expressions into final project files.">
+  <title>Scaf Compose by Example</title>
+  <style>
+    :root {
+      --bg: #0d1217;
+      --panel: #151c23;
+      --panel-2: #1b252e;
+      --paper: #f5f1e8;
+      --ink: #15202a;
+      --text: #eaf0f2;
+      --muted: #9eacb4;
+      --line: #34434e;
+      --python: #ffcb57;
+      --docker: #57b8ff;
+      --ci: #dc83ff;
+      --parent: #ff7058;
+      --result: #6cdda8;
+      --danger: #ff6b6b;
+      --mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
+      --display: Rockwell, "Roboto Slab", Georgia, serif;
+      --body: "Avenir Next", Avenir, "Trebuchet MS", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 86% 8%, rgba(87,184,255,.13), transparent 24rem),
+        radial-gradient(circle at 12% 32%, rgba(255,112,88,.09), transparent 28rem),
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+        var(--bg);
+      background-size: auto, auto, 24px 24px, 24px 24px, auto;
+      font-family: var(--body);
+      line-height: 1.55;
+    }
+
+    code, pre { font-family: var(--mono); }
+    button { font: inherit; }
+    :focus-visible { outline: 3px solid var(--python); outline-offset: 3px; }
+
+    .wrap { width: min(1440px, calc(100% - 48px)); margin: 0 auto; }
+    .masthead { padding: 68px 0 42px; border-bottom: 1px solid var(--line); }
+    .kicker {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 18px;
+      color: var(--result);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .kicker::before { content: ""; width: 34px; height: 3px; background: var(--result); }
+    h1, h2, h3 { font-family: var(--display); }
+    h1 {
+      max-width: 980px;
+      margin: 0;
+      font-size: clamp(48px, 7vw, 104px);
+      line-height: .92;
+      letter-spacing: -.05em;
+    }
+    h1 em { color: var(--parent); font-style: normal; }
+    .lede { max-width: 830px; margin: 24px 0 0; color: var(--muted); font-size: clamp(17px, 2vw, 22px); }
+
+    .flow-summary {
+      display: grid;
+      grid-template-columns: 1fr 74px 1fr 74px 1fr;
+      gap: 12px;
+      align-items: center;
+      margin: 46px 0 0;
+    }
+    .flow-step {
+      min-height: 108px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      background: rgba(21,28,35,.86);
+    }
+    .flow-step small { display: block; margin-bottom: 8px; color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .flow-step b { font-family: var(--display); font-size: 22px; }
+    .flow-arrow { color: var(--parent); font-family: var(--display); font-size: 42px; text-align: center; }
+
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 22px 0; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+    .legend span { display: inline-flex; align-items: center; gap: 7px; }
+    .dot { width: 10px; height: 10px; border-radius: 3px; background: currentColor; }
+    .python { color: var(--python); }
+    .docker { color: var(--docker); }
+    .ci { color: var(--ci); }
+    .parent { color: var(--parent); }
+    .result { color: var(--result); }
+
+    main { padding: 38px 0 100px; }
+    .workbench {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: rgba(13,18,23,.82);
+      box-shadow: 0 28px 70px rgba(0,0,0,.35);
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .tab {
+      min-height: 88px;
+      padding: 16px 22px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+    }
+    .tab:last-child { border-right: 0; }
+    .tab small { display: block; margin-bottom: 7px; font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .tab b { color: var(--text); font-family: var(--display); font-size: 19px; }
+    .tab[aria-selected="true"] { color: var(--ink); background: var(--paper); }
+    .tab[aria-selected="true"] b { color: var(--ink); }
+    .tab[aria-selected="true"] small { color: #75574d; }
+
+    .example { display: none; }
+    .example.active { display: block; }
+    .example-intro {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-start;
+      padding: 28px 30px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+    }
+    .example-intro h2 { margin: 0 0 5px; font-size: 30px; }
+    .example-intro p { max-width: 780px; margin: 0; color: var(--muted); }
+    .spec-badge {
+      flex: 0 0 auto;
+      padding: 7px 10px;
+      border: 1px solid var(--result);
+      color: var(--result);
+      border-radius: 999px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .composition-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) 76px minmax(0, .94fr) 76px minmax(0, 1.08fr);
+      gap: 0;
+      min-height: 690px;
+    }
+    .stage { min-width: 0; padding: 28px; }
+    .stage.sources { background: #11181e; }
+    .stage.expression { background: #1b2024; }
+    .stage.output { background: #101a17; }
+    .stage-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
+    .stage-label { color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .stage-count { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 50%; color: var(--text); font-family: var(--mono); font-size: 10px; }
+    .connector { position: relative; display: grid; place-items: center; border-right: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--bg); }
+    .connector::before { content: ""; position: absolute; width: 100%; height: 1px; background: var(--parent); }
+    .connector span { position: relative; z-index: 1; display: grid; place-items: center; width: 38px; height: 38px; color: var(--ink); background: var(--parent); border-radius: 50%; font-family: var(--display); font-size: 23px; }
+
+    .file-stack { display: grid; gap: 16px; }
+    .file-card { overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+    .file-card.python-file { border-top: 4px solid var(--python); }
+    .file-card.docker-file { border-top: 4px solid var(--docker); }
+    .file-card.ci-file { border-top: 4px solid var(--ci); }
+    .file-card.parent-file { border-top: 4px solid var(--parent); }
+    .file-card.result-file { border-top: 4px solid var(--result); }
+    .file-bar { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); color: var(--muted); background: rgba(255,255,255,.025); font-family: var(--mono); font-size: 10px; }
+    .file-bar b { color: var(--text); }
+    .file-card pre {
+      overflow-x: auto;
+      margin: 0;
+      padding: 16px;
+      color: #dce5e8;
+      font-size: 11px;
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .expression .file-card pre { font-size: 10.5px; }
+    .output .file-card { background: #13211c; }
+    .output .file-card pre { color: #e8f7ef; }
+
+    .token-key { color: #ff88b4; }
+    .token-value { color: #9bd8ff; }
+    .token-string { color: #ffd47c; }
+    .token-jinja { color: #ff9c87; font-weight: 700; }
+    .token-comment { color: #758791; }
+    .trace-python { color: var(--python); font-weight: 800; }
+    .trace-docker { color: var(--docker); font-weight: 800; }
+    .trace-ci { color: var(--ci); font-weight: 800; }
+    .removed { color: #718089; text-decoration: line-through 2px var(--danger); }
+    .kept { color: var(--result); font-weight: 800; }
+
+    .callout {
+      margin-top: 16px;
+      padding: 15px 16px;
+      border-left: 4px solid var(--parent);
+      color: var(--muted);
+      background: rgba(255,112,88,.07);
+      font-size: 12px;
+    }
+    .callout strong { color: var(--text); }
+    .callout.result-note { border-color: var(--result); background: rgba(108,221,168,.07); }
+
+    .section-trace { display: grid; gap: 8px; margin-top: 14px; }
+    .trace-row { display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; color: var(--muted); font-size: 12px; }
+    .trace-row b { display: grid; place-items: center; width: 26px; height: 26px; color: var(--ink); border-radius: 50%; font-family: var(--mono); font-size: 10px; }
+    .trace-row.python-row b { background: var(--python); }
+    .trace-row.docker-row b { background: var(--docker); }
+    .trace-row.ci-row b { background: var(--ci); }
+
+    .binary-card { padding: 18px; border: 1px solid var(--line); background: var(--panel); }
+    .binary-preview { display: grid; grid-template-columns: 88px 1fr; gap: 16px; align-items: center; }
+    .app-icon { display: grid; place-items: center; width: 78px; height: 78px; border-radius: 18px; color: var(--ink); font-family: var(--display); font-size: 38px; font-weight: 900; }
+    .icon-assets { background: var(--result); box-shadow: inset 0 0 0 7px rgba(13,18,23,.18); }
+    .icon-legacy { background: var(--ci); filter: saturate(.55); }
+    .binary-meta b { display: block; margin-bottom: 5px; font-family: var(--mono); font-size: 12px; }
+    .binary-meta span { color: var(--muted); font-size: 12px; }
+    .binary-card.not-selected { opacity: .55; }
+    .binary-card.selected { border: 2px solid var(--result); }
+    .selected-mark { display: inline-block; margin-top: 8px; padding: 3px 7px; color: var(--ink); background: var(--result); font-family: var(--mono); font-size: 9px; font-weight: 900; text-transform: uppercase; }
+
+    .exact-result {
+      margin-top: 18px;
+      padding: 14px;
+      border: 1px dashed var(--result);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+    .exact-result b { color: var(--result); }
+
+    .routing { margin-top: 54px; padding: 36px; border: 1px solid var(--line); background: var(--panel); }
+    .routing-head { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-bottom: 28px; }
+    .routing h2 { margin: 0; font-size: clamp(30px, 4vw, 48px); }
+    .routing-head p { margin: 0; color: var(--muted); }
+    .route-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .route-card { min-height: 220px; padding: 20px; border: 1px solid var(--line); background: #11181e; }
+    .route-card h3 { margin: 10px 0; font-size: 21px; }
+    .route-card p { margin: 0; color: var(--muted); font-size: 13px; }
+    .route-chip { display: inline-block; padding: 4px 7px; border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+    .route-card:nth-child(1) .route-chip { background: var(--danger); }
+    .route-card:nth-child(2) .route-chip { background: var(--python); }
+    .route-card:nth-child(3) .route-chip { background: var(--docker); }
+    .route-card:nth-child(4) .route-chip { background: var(--result); }
+    .route-example { margin-top: 17px; padding: 10px; border: 1px dashed var(--line); color: #dce5e8; font-family: var(--mono); font-size: 10px; }
+
+    .manifest { margin-top: 28px; border: 1px solid var(--line); background: #11181e; }
+    .manifest summary { padding: 18px 20px; cursor: pointer; color: var(--text); font-family: var(--display); font-size: 18px; font-weight: 800; }
+    .manifest[open] summary { border-bottom: 1px solid var(--line); }
+    .manifest pre { overflow-x: auto; margin: 0; padding: 22px; color: #dce5e8; font-size: 11px; line-height: 1.6; }
+
+    .reference { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+    .reference-card { padding: 18px; border: 1px solid var(--line); color: var(--muted); background: rgba(21,28,35,.68); font-size: 12px; }
+    .reference-card b { display: block; margin-bottom: 7px; color: var(--text); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+
+    footer { padding: 40px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
+    footer code { color: var(--text); }
+
+    @media (max-width: 1180px) {
+      .composition-grid { grid-template-columns: 1fr; }
+      .connector { min-height: 64px; border-right: 0; border-left: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .connector::before { width: 1px; height: 100%; }
+      .connector span { transform: rotate(90deg); }
+      .file-stack.sources-stack { grid-template-columns: repeat(3, 1fr); }
+      .composition-grid { min-height: 0; }
+      .route-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 24px, 680px); }
+      .masthead { padding-top: 42px; }
+      .flow-summary { grid-template-columns: 1fr; }
+      .flow-arrow { transform: rotate(90deg); }
+      .tabs { grid-template-columns: 1fr; }
+      .tab { min-height: 68px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .example-intro, .routing-head { grid-template-columns: 1fr; display: grid; }
+      .spec-badge { width: max-content; }
+      .stage { padding: 18px; }
+      .file-stack.sources-stack { grid-template-columns: 1fr; }
+      .route-grid, .reference { grid-template-columns: 1fr; }
+      .routing { padding: 22px; }
+      footer .wrap { display: block; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+
+    @media print {
+      body { color: #111; background: #fff; }
+      .tabs { display: none; }
+      .example { display: block !important; break-before: page; }
+      .workbench, .routing, .manifest, .file-card, .route-card { color: #111; background: #fff; box-shadow: none; }
+      .composition-grid { grid-template-columns: 1fr; }
+      .connector { min-height: 30px; }
+      .file-card pre, .manifest pre { color: #111; }
+    }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="wrap">
+      <div class="kicker">Scaf Compose v1 · worked visual</div>
+      <h1>Compose,<br><em>by example.</em></h1>
+      <p class="lede">Trace real child files through a compose expression. See the exact file that enters the final project.</p>
+
+      <div class="flow-summary" aria-label="Composition flow">
+        <div class="flow-step"><small>Input</small><b>Rendered child files</b></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step"><small>Policy</small><b><code>scaf.yaml</code> and parent Jinja</b></div>
+        <div class="flow-arrow" aria-hidden="true">→</div>
+        <div class="flow-step"><small>Output</small><b>One final owned file</b></div>
+      </div>
+
+      <div class="legend" aria-label="Color legend">
+        <span class="python"><i class="dot"></i>python child</span>
+        <span class="docker"><i class="dot"></i>docker child</span>
+        <span class="ci"><i class="dot"></i>ci child</span>
+        <span class="parent"><i class="dot"></i>parent expression</span>
+        <span class="result"><i class="dot"></i>final output</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="workbench" aria-label="Interactive composition examples">
+      <div class="tabs" role="tablist" aria-label="Compose strategies">
+        <button class="tab" id="tab-render" role="tab" aria-selected="true" aria-controls="panel-render" data-example="render">
+          <small>Example 01</small><b>Render a new README</b>
+        </button>
+        <button class="tab" id="tab-concat" role="tab" aria-selected="false" aria-controls="panel-concat" data-example="concat">
+          <small>Example 02</small><b>Concatenate .gitignore</b>
+        </button>
+        <button class="tab" id="tab-prefer" role="tab" aria-selected="false" aria-controls="panel-prefer" data-example="prefer">
+          <small>Example 03</small><b>Prefer one favicon</b>
+        </button>
+      </div>
+
+      <article class="example active" id="panel-render" role="tabpanel" aria-labelledby="tab-render">
+        <header class="example-intro">
+          <div>
+            <h2><code>strategy: render</code></h2>
+            <p>The parent reads selected sections from three suppressed child README files. The parent then renders one coherent README.</p>
+          </div>
+          <span class="spec-badge">Specification §15</span>
+        </header>
+
+        <div class="composition-grid">
+          <div class="stage sources">
+            <div class="stage-head"><span class="stage-label">A · Child render output</span><span class="stage-count">3</span></div>
+            <div class="file-stack sources-stack">
+              <div class="file-card python-file">
+                <div class="file-bar"><b>python/README.md</b><span>suppress + context</span></div>
+                <pre># Orbit API
+
+<span class="trace-python">## Development
+Install dependencies:
+  uv sync
+Run the test suite:
+  pytest</span>
+
+## Packaging
+Build with uv.</pre>
+              </div>
+
+              <div class="file-card docker-file">
+                <div class="file-bar"><b>docker/README.md</b><span>suppress + context</span></div>
+                <pre># Docker support
+
+<span class="trace-docker">## Configuration
+Set APP_PORT=8000.
+Run:
+  docker compose up --build</span>
+
+## Images
+Uses a slim Python image.</pre>
+              </div>
+
+              <div class="file-card ci-file">
+                <div class="file-bar"><b>ci/README.md</b><span>suppress + context</span></div>
+                <pre># GitHub Actions
+
+<span class="trace-ci">## Workflows
+ci.yml runs lint and tests.
+release.yml publishes tags.</span>
+
+## Secrets
+Set PYPI_TOKEN.</pre>
+              </div>
+            </div>
+            <div class="callout"><strong>Why both controls?</strong> <code>suppress</code> stops automatic output. <code>context</code> lets parent Jinja read the text.</div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage expression">
+            <div class="stage-head"><span class="stage-label">B · Parent expression</span><span class="stage-count">1</span></div>
+            <div class="file-stack">
+              <div class="file-card parent-file">
+                <div class="file-bar"><b>scaf.yaml</b><span>ownership</span></div>
+                <pre><span class="token-key">compose</span>:
+  <span class="token-string">"README.md"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">render</span></pre>
+              </div>
+
+              <div class="file-card parent-file">
+                <div class="file-bar"><b>template/README.md.jinja</b><span>parent output</span></div>
+                <pre># <span class="token-jinja">{{ project_name }}</span>
+
+<span class="token-jinja">{{ project_description }}</span>
+
+## Quick Start
+```bash
+make setup
+make run
+```
+
+## Development
+<span class="trace-python">{{ scaf.children.python.text["README.md"]
+   | section("## Development") }}</span>
+
+## Docker
+<span class="trace-docker">{{ scaf.children.docker.text["README.md"]
+   | section("## Configuration", required=False) }}</span>
+
+## CI
+<span class="trace-ci">{{ scaf.children.ci.text["README.md"]
+   | section("## Workflows", required=False) }}</span></pre>
+              </div>
+            </div>
+            <div class="section-trace">
+              <div class="trace-row python-row"><b>1</b><span><code>section("## Development")</code> copies that heading and its body.</span></div>
+              <div class="trace-row docker-row"><b>2</b><span><code>required=False</code> permits an absent optional section.</span></div>
+              <div class="trace-row ci-row"><b>3</b><span>Each expression reads only allowlisted child text.</span></div>
+            </div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage output">
+            <div class="stage-head"><span class="stage-label">C · Final project file</span><span class="stage-count">1</span></div>
+            <div class="file-card result-file">
+              <div class="file-bar"><b>orbit-api/README.md</b><span>owner: parent render</span></div>
+              <pre># Orbit API
+
+A small service for orbital data.
+
+## Quick Start
+```bash
+make setup
+make run
+```
+
+<span class="trace-python">## Development
+Install dependencies:
+  uv sync
+Run the test suite:
+  pytest</span>
+
+<span class="trace-docker">## Docker
+Set APP_PORT=8000.
+Run:
+  docker compose up --build</span>
+
+<span class="trace-ci">## CI
+ci.yml runs lint and tests.
+release.yml publishes tags.</span></pre>
+            </div>
+            <div class="callout result-note"><strong>Result:</strong> The child README files do not enter the root. The parent owns the only final <code>README.md</code>.</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="example" id="panel-concat" role="tabpanel" aria-labelledby="tab-concat" hidden>
+        <header class="example-intro">
+          <div>
+            <h2><code>strategy: concat</code></h2>
+            <p>Scaf reads the same path from three children. It keeps source order and removes duplicate lines before assembly.</p>
+          </div>
+          <span class="spec-badge">Specification §§7.2, 15</span>
+        </header>
+
+        <div class="composition-grid">
+          <div class="stage sources">
+            <div class="stage-head"><span class="stage-label">A · Child render output</span><span class="stage-count">3</span></div>
+            <div class="file-stack sources-stack">
+              <div class="file-card python-file">
+                <div class="file-bar"><b>python/.gitignore</b><span>source 1</span></div>
+                <pre><span class="kept">.venv/
+__pycache__/
+.env</span></pre>
+              </div>
+              <div class="file-card docker-file">
+                <div class="file-bar"><b>docker/.gitignore</b><span>source 2</span></div>
+                <pre><span class="removed">.env</span>
+<span class="kept">*.log
+docker-data/</span></pre>
+              </div>
+              <div class="file-card ci-file">
+                <div class="file-bar"><b>ci/.gitignore</b><span>source 3</span></div>
+                <pre><span class="kept">.coverage</span>
+<span class="removed">*.log</span></pre>
+              </div>
+            </div>
+            <div class="callout"><strong>Deduplication:</strong> Scaf preserves the first occurrence. It removes later <code>.env</code> and <code>*.log</code> lines.</div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage expression">
+            <div class="stage-head"><span class="stage-label">B · Compose expression</span><span class="stage-count">1</span></div>
+            <div class="file-card parent-file">
+              <div class="file-bar"><b>scaf.yaml</b><span>ordered assembly</span></div>
+              <pre><span class="token-key">compose</span>:
+  <span class="token-string">".gitignore"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">concat</span>
+    <span class="token-key">sources</span>:
+      - <span class="trace-python">python</span>
+      - <span class="trace-docker">docker</span>
+      - <span class="trace-ci">ci</span>
+    <span class="token-key">separator</span>: <span class="token-string">"\n\n"</span>
+    <span class="token-key">dedupe_lines</span>: <span class="token-value">true</span>
+    <span class="token-key">header</span>: <span class="token-string">"# Generated by Scaf Compose\n"</span></pre>
+            </div>
+            <div class="section-trace">
+              <div class="trace-row python-row"><b>1</b><span>Process the Python body first.</span></div>
+              <div class="trace-row docker-row"><b>2</b><span>Remove lines already seen. Keep remaining Docker lines.</span></div>
+              <div class="trace-row ci-row"><b>3</b><span>Process CI last. Then join the three bodies.</span></div>
+            </div>
+            <div class="exact-result"><b>Exact formula</b><br>(header or "") + separator.join(processed_bodies)</div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage output">
+            <div class="stage-head"><span class="stage-label">C · Final project file</span><span class="stage-count">1</span></div>
+            <div class="file-card result-file">
+              <div class="file-bar"><b>orbit-api/.gitignore</b><span>owner: Scaf concat</span></div>
+              <pre># Generated by Scaf Compose
+<span class="trace-python">.venv/
+__pycache__/
+.env</span>
+
+<span class="trace-docker">*.log
+docker-data/</span>
+
+<span class="trace-ci">.coverage</span></pre>
+            </div>
+            <div class="callout result-note"><strong>Result:</strong> The header touches the first body directly. Scaf inserts separators only between processed source bodies.</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="example" id="panel-prefer" role="tabpanel" aria-labelledby="tab-prefer" hidden>
+        <header class="example-intro">
+          <div>
+            <h2><code>strategy: prefer</code></h2>
+            <p>Two children produce the same binary path. The rule names one authoritative source, so the overlap is explicit.</p>
+          </div>
+          <span class="spec-badge">Illustrative extension · §7.3</span>
+        </header>
+
+        <div class="composition-grid">
+          <div class="stage sources">
+            <div class="stage-head"><span class="stage-label">A · Child render output</span><span class="stage-count">2</span></div>
+            <div class="file-stack">
+              <div class="binary-card selected">
+                <div class="binary-preview">
+                  <div class="app-icon icon-assets">S</div>
+                  <div class="binary-meta"><b>assets/favicon.ico</b><span>32 × 32 ICO · current product mark</span><br><i class="selected-mark">selected source</i></div>
+                </div>
+              </div>
+              <div class="binary-card not-selected">
+                <div class="binary-preview">
+                  <div class="app-icon icon-legacy">L</div>
+                  <div class="binary-meta"><b>legacy_brand/favicon.ico</b><span>32 × 32 ICO · legacy product mark</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="callout"><strong>Conflict without a rule:</strong> Both children produce <code>favicon.ico</code>. Scaf cannot infer which child owns it.</div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage expression">
+            <div class="stage-head"><span class="stage-label">B · Compose expression</span><span class="stage-count">1</span></div>
+            <div class="file-card parent-file">
+              <div class="file-bar"><b>scaf.yaml</b><span>source selection</span></div>
+              <pre><span class="token-key">dependencies</span>:
+  - <span class="token-key">name</span>: <span class="token-value">assets</span>
+    <span class="token-key">repo</span>: <span class="token-string">copier-assets.git</span>
+    <span class="token-key">suppress</span>:
+      - <span class="token-string">favicon.ico</span>
+
+  - <span class="token-key">name</span>: <span class="token-value">legacy_brand</span>
+    <span class="token-key">repo</span>: <span class="token-string">copier-legacy.git</span>
+    <span class="token-key">suppress</span>:
+      - <span class="token-string">favicon.ico</span>
+
+<span class="token-key">compose</span>:
+  <span class="token-string">"favicon.ico"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">prefer</span>
+    <span class="token-key">source</span>: <span class="kept">assets</span></pre>
+            </div>
+            <div class="callout"><strong>Binary-safe:</strong> <code>prefer</code> copies the selected file. It does not decode or merge the content.</div>
+          </div>
+
+          <div class="connector" aria-hidden="true"><span>→</span></div>
+
+          <div class="stage output">
+            <div class="stage-head"><span class="stage-label">C · Final project file</span><span class="stage-count">1</span></div>
+            <div class="binary-card selected">
+              <div class="binary-preview">
+                <div class="app-icon icon-assets">S</div>
+                <div class="binary-meta"><b>orbit-api/favicon.ico</b><span>Exact bytes from <code>assets</code></span><br><i class="selected-mark">owner: Scaf prefer</i></div>
+              </div>
+            </div>
+            <div class="callout result-note"><strong>Result:</strong> The final path has one declared owner. The legacy file remains outside the final project.</div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="routing" aria-labelledby="routing-title">
+      <div class="routing-head">
+        <h2 id="routing-title">Before composition:<br>route each child file.</h2>
+        <p>Dependency controls decide whether a child file participates, emits automatically, or becomes visible to parent Jinja.</p>
+      </div>
+
+      <div class="route-grid">
+        <article class="route-card">
+          <span class="route-chip">exclude</span>
+          <h3>Remove completely</h3>
+          <p>The file does not auto-emit. It also cannot be used by <code>render</code>, <code>concat</code>, or <code>prefer</code>.</p>
+          <div class="route-example">exclude:<br>&nbsp;&nbsp;- docs/internal/**</div>
+        </article>
+        <article class="route-card">
+          <span class="route-chip">suppress</span>
+          <h3>Do not auto-emit</h3>
+          <p>The file remains available to an explicit compose rule. This control resolves intentional overlaps.</p>
+          <div class="route-example">suppress:<br>&nbsp;&nbsp;- README.md</div>
+        </article>
+        <article class="route-card">
+          <span class="route-chip">context</span>
+          <h3>Expose text to Jinja</h3>
+          <p>The parent can read allowlisted UTF-8 text. This control does not decide final ownership.</p>
+          <div class="route-example">context:<br>&nbsp;&nbsp;- README.md</div>
+        </article>
+        <article class="route-card">
+          <span class="route-chip">pass-through</span>
+          <h3>Emit uncontested output</h3>
+          <p>One active child produces the path. The parent does not overlap it, so no compose rule is necessary.</p>
+          <div class="route-example">python/pyproject.toml<br>→ project/pyproject.toml</div>
+        </article>
+      </div>
+
+      <details class="manifest">
+        <summary>Show the specification’s complete worked <code>scaf.yaml</code></summary>
+        <pre><span class="token-key">_min_scaf_version</span>: <span class="token-string">"1.0.0"</span>
+
+<span class="token-key">dependencies</span>:
+  - <span class="token-key">name</span>: <span class="trace-python">python</span>
+    <span class="token-key">repo</span>: <span class="token-string">https://github.com/getscaf/copier-python.git</span>
+    <span class="token-key">ref</span>: <span class="token-string">"v1.0.3"</span>
+    <span class="token-key">answers</span>:
+      <span class="token-key">project_name</span>: <span class="token-string">"{{ project_name }}"</span>
+      <span class="token-key">python_version</span>: <span class="token-string">"{{ python_version }}"</span>
+      <span class="token-key">linter</span>: <span class="token-string">"{{ linter }}"</span>
+    <span class="token-key">suppress</span>: [<span class="token-string">README.md</span>, <span class="token-string">Makefile</span>]
+    <span class="token-key">context</span>: [<span class="token-string">README.md</span>, <span class="token-string">Makefile</span>]
+
+  - <span class="token-key">name</span>: <span class="trace-docker">docker</span>
+    <span class="token-key">repo</span>: <span class="token-string">https://github.com/getscaf/copier-docker.git</span>
+    <span class="token-key">ref</span>: <span class="token-string">"v2.0.1"</span>
+    <span class="token-key">answers</span>:
+      <span class="token-key">project_name</span>: <span class="token-string">"{{ project_name }}"</span>
+      <span class="token-key">base_image</span>: <span class="token-string">"python:{{ python_version }}-slim"</span>
+    <span class="token-key">suppress</span>: [<span class="token-string">README.md</span>, <span class="token-string">Makefile</span>]
+    <span class="token-key">context</span>: [<span class="token-string">README.md</span>, <span class="token-string">Makefile</span>]
+
+  - <span class="token-key">name</span>: <span class="trace-ci">ci</span>
+    <span class="token-key">repo</span>: <span class="token-string">https://github.com/getscaf/copier-github-actions.git</span>
+    <span class="token-key">ref</span>: <span class="token-string">"v0.3.2"</span>
+    <span class="token-key">answers</span>:
+      <span class="token-key">project_name</span>: <span class="token-string">"{{ project_name }}"</span>
+      <span class="token-key">language</span>: <span class="token-string">"python"</span>
+    <span class="token-key">suppress</span>: [<span class="token-string">README.md</span>]
+    <span class="token-key">context</span>: [<span class="token-string">README.md</span>]
+
+<span class="token-key">compose</span>:
+  <span class="token-string">"README.md"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">render</span>
+  <span class="token-string">"Makefile"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">render</span>
+  <span class="token-string">".gitignore"</span>:
+    <span class="token-key">strategy</span>: <span class="token-value">concat</span>
+    <span class="token-key">sources</span>: [<span class="trace-python">python</span>, <span class="trace-docker">docker</span>, <span class="trace-ci">ci</span>]
+    <span class="token-key">separator</span>: <span class="token-string">"\n\n"</span>
+    <span class="token-key">dedupe_lines</span>: <span class="token-value">true</span>
+    <span class="token-key">header</span>: <span class="token-string">"# Generated by Scaf Compose\n"</span></pre>
+      </details>
+
+      <div class="reference">
+        <div class="reference-card"><b>Ownership invariant</b>Every final path has exactly one owner. Scaf stops when a path remains ambiguous.</div>
+        <div class="reference-card"><b>Example scope</b>The README and .gitignore examples follow §15. Child file bodies are concise illustrative render output.</div>
+        <div class="reference-card"><b>Prefer scope</b>The favicon example extends the graph to demonstrate §7.3. It is not part of the §15 worked example.</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>Authoritative source: <code>docs/specs/2026-08-19-scaf-compose-design.md</code></span>
+      <span>Reference commit: <code>1245ed0</code></span>
+    </div>
+  </footer>
+
+  <script>
+    const tabs = [...document.querySelectorAll('.tab')];
+    const panels = [...document.querySelectorAll('.example')];
+
+    function selectExample(name, moveFocus = false) {
+      tabs.forEach(tab => {
+        const selected = tab.dataset.example === name;
+        tab.setAttribute('aria-selected', String(selected));
+        if (selected && moveFocus) tab.focus();
+      });
+      panels.forEach(panel => {
+        const selected = panel.id === `panel-${name}`;
+        panel.classList.toggle('active', selected);
+        panel.hidden = !selected;
+      });
+    }
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectExample(tab.dataset.example));
+      tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let next = index;
+        if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = tabs.length - 1;
+        selectExample(tabs[next].dataset.example, true);
+      });
+    });
+  </script>
+</body>
+</html>
