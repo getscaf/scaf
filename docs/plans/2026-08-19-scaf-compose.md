@@ -111,6 +111,7 @@
 - Modify `default.nix` to package the Python application and its runtime dependencies.
 - Modify `flake.nix` to expose the package and its checks.
 - Modify `.releaserc.json` to update `src/scaf_cli/version.py` during releases.
+- Modify `.github/workflows/setup-project.yaml` for quality, installer, legacy E2E, and both Nix build paths.
 - Modify `README.md` with the new commands and compatibility syntax.
 - Modify `CONTRIBUTING.md` with setup, test, lint, and fixture instructions.
 
@@ -160,6 +161,8 @@ The command modules are facades. Pure modules do not import command, network, pr
 - [ ] **Step 1: Write the failing bootstrap tests**
 
 ```python
+from semantic_version import Version
+
 import pytest
 
 from scaf_cli.cli import build_parser, main
@@ -175,19 +178,19 @@ def test_parser_exposes_v1_commands():
 
 
 def test_version_is_semver():
-    assert __version__ == "1.26.2"
+    assert str(Version(__version__)) == __version__
 
 
 def test_main_exits_zero_for_version(capsys):
     with pytest.raises(SystemExit) as exit_info:
         main(["--version"])
     assert exit_info.value.code == 0
-    assert capsys.readouterr().out.strip() == "scaf 1.26.2"
+    assert capsys.readouterr().out.strip() == f"scaf {__version__}"
 ```
 
 - [ ] **Step 2: Run the tests and verify the import failure**
 
-Run: `uv run --with pytest pytest tests/unit/test_cli_bootstrap.py -q`
+Run: `uv run --with pytest --with semantic-version==2.10.0 pytest tests/unit/test_cli_bootstrap.py -q`
 
 Expected: FAIL because `scaf_cli` does not exist.
 
@@ -196,7 +199,6 @@ Expected: FAIL because `scaf_cli` does not exist.
 Use this runtime dependency set in `requirements-runtime.in`:
 
 ```text
-binaryornot==0.4.4
 copier==8.1.0
 jinja2==3.1.6
 packaging==25.0
@@ -251,7 +253,7 @@ testpaths = ["tests"]
 addopts = "-ra"
 ```
 
-Add `-r requirements-runtime.in` at the start of `requirements.in`. Keep the existing development dependencies below it.
+Replace the current `copier`, `sh`, and `binaryornot` preamble in `requirements.in` with `-r requirements-runtime.in`. Keep the code-quality and test dependencies below it.
 
 - [ ] **Step 4: Add the minimal package and parser**
 
@@ -575,6 +577,10 @@ Cover these behaviors in one parameter table:
             "dependencies: []\ncompose:\n  /absolute:\n    strategy: render",
             "compose path",
         ),
+        (
+            'dependencies: []\ncompose:\n  "**/README.md":\n    strategy: render',
+            "literal path",
+        ),
     ],
 )
 def test_rejects_invalid_manifest(yaml_text, message):
@@ -650,7 +656,7 @@ CONCAT_FIELDS = {"strategy", "sources", "separator", "dedupe_lines", "header"}
 PREFER_FIELDS = {"strategy", "source"}
 ```
 
-Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Keep dependency order and compose mapping order.
+Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Reject `*`, `?`, `[`, or `]` in literal compose keys. Keep dependency order and compose mapping order.
 
 - [ ] **Step 5: Run the manifest tests**
 
@@ -677,6 +683,7 @@ git commit -m "feat(compose): parse strict manifests"
 
 **Interfaces:**
 - Produces: `ResolvedSource(locator: str, resolved_locator: str, root: Path, requested_ref: str | None, selector_kind: Literal["omitted", "branch", "tag", "commit"], selected_ref: str, commit: str)`
+- Produces: `normalize_copier_git_locator(locator: str) -> str`
 - Produces: `ResolutionWorkspace(root: Path)` as a context manager that owns every temporary clone and checkout
 - Produces: `ResolutionWorkspace.resolve(locator: str, requested_ref: str | None, base: Path, require_clean: bool = True) -> ResolvedSource`
 - Produces: `ResolutionWorkspace.verify_locked_tag(source: ResolvedSource, selected_ref: str, commit: str) -> None`
@@ -704,6 +711,9 @@ Cover:
 - A relative parent path uses the invocation directory.
 - A relative child path uses the resolved parent root and keeps its normalized parent-relative locator.
 - An absolute local path remains canonical.
+- `gh:owner/repo` and `gh:/owner/repo.git` both normalize to `https://github.com/owner/repo.git`.
+- `gl:owner/repo` and `gl:/owner/repo.git` both normalize to `https://gitlab.com/owner/repo.git`.
+- Shortcut sources keep the original `locator` and use the expanded URL as `resolved_locator`.
 - A `file://` bare remote exercises clone and remote-ref handling without network access.
 - `ResolvedSource.resolved_locator` stores the canonical path used for Git operations.
 - A dirty, non-Git, or unborn local repository raises `ScafResolveError`.
@@ -766,7 +776,7 @@ def highest_release_tag(tags: Mapping[str, str]) -> str | None:
 
 Treat explicit `HEAD` as a moving branch-kind selector with `selected_ref="HEAD"`. Store full commit object IDs.
 
-Use `locator` for persisted manifest identity. Use `resolved_locator` for clone and Git calls. Peel annotated tags to commit objects before locking.
+Use `locator` for persisted manifest identity. Before any Git call, normalize Copier 8.1 `gh:` and `gl:` shortcuts in `sources.py`. Remove one optional slash, preserve an existing `.git` suffix, and add that suffix when absent. Use `resolved_locator` for clone and Git calls. Peel annotated tags to commit objects before locking.
 
 When `require_clean=False`, inspect only a separate checkout of the selected commit. Never inspect uncommitted local files through that result.
 
@@ -821,6 +831,7 @@ Test these exact cases:
 - A child mapping overrides a child default.
 - An active child default fills a missing mapping.
 - A false `when:` condition makes an answer unnecessary.
+- Parent and child question defaults and `when:` expressions can use a fixture extension under trusted mode.
 - An active child question without a mapping or default raises `ScafAnswerError`.
 - An unknown mapped child question raises `ScafValidationError`.
 - Plain strings such as `"3.12"`, `"False"`, and `"[1]"` remain strings.
@@ -903,7 +914,7 @@ V1 exposes no additional static answer variables because the specification defin
 
 - [ ] **Step 6: Resolve child defaults and `when:` with Copier**
 
-Construct a quiet Worker with mapped data and `defaults=True`. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
+Construct every parent and child question Worker with `unsafe=True`. For child answers, use mapped data, `defaults=True`, and quiet mode. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
 
 Return only visible child question values. Do not return Copier metadata keys.
 
@@ -1148,6 +1159,7 @@ Use a parameterized test for all seven rows in section 6.2. Add separate tests f
 - A parent or non-excluded child output under reserved `.scaf/`.
 - One final file path that is the directory prefix of another final file path.
 - A rule whose required source output is missing.
+- Distinct final paths with the same `path.casefold()` value.
 
 Assert that analysis returns every conflict. Then assert actionable `ScafConflictError` text from `require_ownership_map()` and section 13.4.
 
@@ -1161,6 +1173,7 @@ Cover:
 - `concat` accepts suppressed sources.
 - `concat` rejects missing, excluded, or binary sources.
 - `concat` deduplicates source-body lines before header and separators.
+- `concat` returns `(header or "") + separator.join(processed_bodies)` without a separator after the header.
 - `prefer` copies text or binary bytes and modes.
 - `prefer` rejects unknown, missing, or excluded sources.
 - Parent-only and uncontested child pass-through files remain unchanged.
@@ -1195,13 +1208,13 @@ class OwnershipAnalysis:
 
 Collect all parent paths, non-excluded child paths, pass-through candidates, and compose keys. Apply explicit compose rules first. Then classify parent-only and single-child pass-through paths.
 
-Treat final path-prefix collisions as structural ownership conflicts. Return every conflict in sorted path order. `require_ownership_map()` raises one actionable `ScafConflictError` from that analysis. Preview can display the same conflicts without mutating output.
+Treat final path-prefix collisions as structural ownership conflicts. Group final paths by `path.casefold()` and reject every group that has distinct spellings. Apply this portable guard on every platform. Return every conflict in sorted path order. `require_ownership_map()` raises one actionable `ScafConflictError` from that analysis. Preview can display the same conflicts without mutating output.
 
 Suppressed-only paths with no rule are intentionally absent from final output.
 
 - [ ] **Step 5: Implement all three strategies**
 
-For concat without deduplication, preserve each UTF-8 body exactly. Insert the header once, then join bodies with the configured separator.
+For concat without deduplication, preserve each UTF-8 body exactly. Compute `(header or "") + separator.join(processed_bodies)`. Do not insert a separator after the header.
 
 For concat with deduplication, remove duplicate logical lines from source bodies in source order. Preserve the first line ending. Add the header and separators afterward.
 
@@ -1290,7 +1303,8 @@ Test:
 - The final directory appears only after one rename.
 - A rename error removes staging and raises `ScafTransactionError`.
 - A destination created after initial validation is never replaced, even when it is an empty directory.
-- An unsupported exclusive-rename platform fails instead of using overwrite-capable fallback behavior.
+- An unsupported exclusive-rename filesystem fails instead of using overwrite-capable fallback behavior.
+- The unsupported-filesystem error names the destination and recommends a supported local filesystem.
 
 - [ ] **Step 3: Run the state and staging tests**
 
@@ -1312,7 +1326,7 @@ Use `tempfile.mkdtemp(prefix=f".{destination.name}.scaf-", dir=destination.paren
 
 Recheck that the destination is absent after candidate completion. Then call `rename_directory_noreplace()` as the commit point. Never use overwrite semantics or copy files as a fallback.
 
-On Linux, call `renameat2(AT_FDCWD, source, AT_FDCWD, destination, RENAME_NOREPLACE)` through `ctypes`. On macOS, call `renamex_np(source, destination, RENAME_EXCL)`. Convert `EEXIST` and unsupported-platform results to `ScafTransactionError`. Do not fall back to plain `rename()`.
+On Linux, call `renameat2(AT_FDCWD, source, AT_FDCWD, destination, RENAME_NOREPLACE)` through `ctypes`. On macOS, call `renamex_np(source, destination, RENAME_EXCL)`. Convert `EEXIST` and unsupported-filesystem results to `ScafTransactionError`. Use this unsupported-filesystem message: `Destination filesystem does not support exclusive directory rename for '<destination>'. Select a local filesystem that supports no-replace rename.` Do not fall back to plain `rename()`.
 
 - [ ] **Step 6: Run the state and staging tests**
 
@@ -1365,6 +1379,8 @@ Cover:
 - A non-Git local parent with `scaf.yaml` raises `ScafResolveError`.
 - A dirty local Git parent with uncommitted `scaf.yaml` raises `ScafResolveError`.
 - A parent without `scaf.yaml` uses normal Copier copy behavior.
+- A single-template fallback runs tasks and extensions with Copier trusted mode enabled.
+- Compose child and parent extensions run with Copier trusted mode enabled.
 - A child task never runs.
 - A parent task runs once after files and `.scaf/` exist.
 - A parent task does not run after a composition failure.
@@ -1432,7 +1448,7 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 
 - [ ] **Step 5: Implement single-template fallback**
 
-Call Copier with the resolved parent locator, explicit destination, parent `--vcs-ref`, merged answer data, defaults setting, and normal task behavior.
+Call Copier with the resolved parent locator, explicit destination, parent `--vcs-ref`, merged answer data, defaults setting, and `unsafe=True`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
 Merge answer-file data with `CreateOptions.injected_answers`. Reject duplicate keys with different values before Copier runs.
 
@@ -1477,7 +1493,7 @@ git commit -m "feat(compose): create composed projects"
 
 - [ ] **Step 1: Write failing validate tests**
 
-Assert that online validation can resolve children and validate answer keys. Assert that `--offline` performs no clone, fetch, prompt, or render call.
+Assert that online validation can resolve children and validate answer keys. Use a fixture extension to prove that online validation loads Copier configuration with trusted mode. Assert that `--offline` performs no clone, fetch, prompt, render, or extension-import call.
 
 Both modes must validate local schema, fields, paths, strategies, known manifest children, and `_min_scaf_version`.
 
@@ -1489,7 +1505,7 @@ Expected: FAIL because static validation does not exist.
 
 - [ ] **Step 3: Implement validation with explicit depth**
 
-Offline mode parses a local parent path only. It reports unresolved remote child question checks. Online mode enters a `ResolutionWorkspace`, resolves sources, and loads Copier question models without rendering. Both successful and failed validation remove workspace-owned paths.
+Offline mode parses a local parent path only. It reports unresolved remote child question checks. Online mode enters a `ResolutionWorkspace`, resolves sources, and loads Copier question models with `unsafe=True` without rendering. Both successful and failed validation remove workspace-owned paths.
 
 Neither mode collects interactive answers.
 
@@ -1540,6 +1556,8 @@ Assert that preview reports:
 
 Assert that preview creates no destination, persists no state, and runs no tasks. Assert resolution workspace cleanup after success and render failure.
 
+Use parent and child fixture extensions to prove that preview renders the trusted Compose graph.
+
 - [ ] **Step 2: Run the preview tests and verify failure**
 
 Run: `uv run pytest tests/integration/test_preview_command.py -q`
@@ -1580,7 +1598,7 @@ git commit -m "feat(compose): preview ownership"
 - Produces: `WriteOperation(path: str, candidate: FileSnapshot)`
 - Produces: `DeleteOperation(path: str)`
 - Produces: `StateOnlyOperation(path: str, candidate_state: ManagedFileState)`
-- Produces: `KeepOperation(path: str, retained_state: ManagedFileState)`
+- Produces: `KeepOperation(path: str, result_state: ManagedFileState)`
 - Produces: `ReconciliationOperation = WriteOperation | DeleteOperation | StateOnlyOperation | KeepOperation`
 - Produces: `ReconciliationPlan(operations: tuple[ReconciliationOperation, ...], result_state: ProjectState)`
 - Produces: `plan_reconciliation(previous_state: ProjectState, current_root: Path, candidate: ComposeCandidate) -> ReconciliationPlan`
@@ -1593,7 +1611,7 @@ Use byte and mode changes independently. Include these cases:
 ```text
 current == previous                         -> write candidate
 current == candidate != previous           -> state-only
-current != previous and candidate == previous -> keep local and old state
+current != previous and candidate == previous -> keep local, previous file facts, and candidate ownership
 all three differ                           -> conflict
 candidate deletes unchanged managed file   -> delete
 candidate deletes locally changed file     -> conflict
@@ -1604,7 +1622,7 @@ Assert that any conflict prevents every planned mutation.
 
 Reject a symlink target, a symlinked ancestor, a device, a FIFO, a socket, and every file-directory transition. Place an outside sentinel behind each symlink and assert that its bytes remain unchanged.
 
-Assert that `result_state` starts from candidate manifest, lock, and answers. For rule 3, replace only that candidate file entry with its previous managed entry. Assert that deletes remove file entries and identical unmanaged files gain candidate entries.
+Assert that `result_state` starts from candidate manifest, lock, and answers. For rule 3, retain the previous hash, mode, executable bit, and kind. Keep the candidate owner and sources. Assert that deletes remove file entries and identical unmanaged files gain candidate entries.
 
 - [ ] **Step 2: Run the reconciliation tests and verify failure**
 
@@ -1633,7 +1651,7 @@ def matches_managed(snapshot: FileSnapshot, managed: ManagedFileState) -> bool:
 
 Use `matches_managed()` for current-to-previous and candidate-to-previous comparisons. Aggregate all path conflicts.
 
-Build `result_state` from `candidate.state`. Apply state-only, retained-state, and delete decisions after every path is conflict-free. Never derive manifest, lock, answers, owners, or sources from file bytes. Raise one `ScafUpdateConflictError` that lists each path and reason in sorted order.
+Build `result_state` from `candidate.state`. Apply state-only, retained-file-fact, and delete decisions after every path is conflict-free. For rule 3, replace only the candidate hash, mode, executable bit, and kind with previous values. Never replace candidate owners or sources. Never derive manifest, lock, answers, owners, or sources from file bytes. Raise one `ScafUpdateConflictError` that lists each path and reason in sorted order.
 
 - [ ] **Step 4: Run the reconciliation tests**
 
@@ -1847,6 +1865,8 @@ Use local repositories with multiple commits and tags. Cover:
 - Explicit `HEAD` can advance.
 - An omitted selector can advance to a higher valid release tag.
 - An omitted selector with no valid release tags can advance with `HEAD`.
+- An omitted selector can switch from locked `HEAD` to a newly available release tag without an ancestry check.
+- A tagless-to-tagged transition can select a commit that precedes the locked `HEAD` commit.
 - A commit selector cannot advance.
 - A moved or missing previously selected tag raises `ScafResolveError`.
 - An explicit tag that moved raises `ScafResolveError`.
@@ -1970,6 +1990,7 @@ git commit -m "feat(compose): report project status"
 - Modify: `default.nix`
 - Modify: `flake.nix`
 - Modify: `.releaserc.json`
+- Modify: `.github/workflows/setup-project.yaml`
 - Modify: `README.md`
 - Modify: `CONTRIBUTING.md`
 - Create: `tests/integration/test_legacy_cli.py`
@@ -1996,6 +2017,8 @@ Normalize project creation to the new `create <repo> <destination>` contract. Pr
 
 Mock upgrade and uninstall process calls. Do not alter the user environment during tests.
 
+Assert that `--upgrade` runs `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. Assert that `--uninstall` runs `uv tool uninstall scaf` and removes a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file. Assert that normalized legacy command errors exit with code 2.
+
 - [ ] **Step 2: Run the legacy tests and verify failure**
 
 Run: `uv run pytest tests/integration/test_legacy_cli.py -q`
@@ -2009,6 +2032,8 @@ Known v1 command names bypass legacy handling. A first positional token that is 
 Return `{"is_project_slug": slug.replace("-", "_")}` in `LegacyInvocation.injected_answers`. The CLI passes that mapping into `CreateOptions`.
 
 Keep `--upgrade` and `--uninstall` as top-level maintenance flags.
+
+Implement `--upgrade` with `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. Implement `--uninstall` with `uv tool uninstall scaf`. If a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file exists, remove it.
 
 - [ ] **Step 4: Replace single-file installation with `uv tool` installation**
 
@@ -2070,9 +2095,39 @@ Add `src/scaf_cli/version.py` to release assets. Keep `package.json` as the rele
 
 Document all five v1 commands, explicit destinations, parent and child contracts, state ownership, update limits, and legacy syntax.
 
+Document these compatibility and safety facts:
+
+- Compose graph rendering and the single-template fallback trust template tasks and extensions.
+- Normalized legacy failures use exit code 2 instead of the previous exit code 1.
+- Exclusive create needs a local filesystem that supports no-replace directory rename.
+- An interrupted create can leave a sibling `.<destination-name>.scaf-*` directory. It is safe to remove after no Scaf process uses it.
+- `--upgrade` and `--uninstall` use the `uv tool` commands from Step 3.
+
 Document `uv sync --extra test --group dev`, focused pytest commands, `uv run pre-commit run --all-files`, and offline Git fixture rules.
 
-- [ ] **Step 8: Run the legacy and full automated suite**
+- [ ] **Step 8: Update continuous integration**
+
+Add a `quality` job to `.github/workflows/setup-project.yaml`. Use `actions/checkout@v4` and `astral-sh/setup-uv@v6`. Install ShellCheck with `sudo apt-get update && sudo apt-get install --yes shellcheck`. Then run:
+
+```bash
+uv sync --extra test --group dev
+uv run pytest -q
+uv run ruff .
+uv run black --check .
+uv run isort --check-only .
+uv run bandit -r src
+shellcheck scaf install.sh
+uv build
+uv run pre-commit run --all-files
+```
+
+Add `astral-sh/setup-uv@v6` before the existing installer E2E step. Correct its repository URL to `https://github.com/sixfeetup/scaf-fullstack-template.git`. Keep the legacy project-creation argument form so CI covers the compatibility adapter and the new `uv tool` installer.
+
+Keep the existing Nix job on `nixos-25.05`. Make sure that `default.nix` uses the Copier 8.1.0 override. Run both `nix-build` and `nix build . --no-link` in that job.
+
+Do not add a test that asserts workflow YAML text. Validate the workflow syntax directly in Step 10.
+
+- [ ] **Step 9: Run the legacy and full automated suite**
 
 Run: `uv run pytest tests/integration/test_legacy_cli.py -q`
 
@@ -2080,7 +2135,7 @@ Run: `uv run pytest -q`
 
 Expected: all tests pass.
 
-- [ ] **Step 9: Verify static packaging changes directly**
+- [ ] **Step 10: Verify static packaging and workflow changes directly**
 
 Run: `uv build`
 
@@ -2089,6 +2144,10 @@ Run: `uv tool run --from dist/scaf-*.whl scaf --version`
 Run: `shellcheck scaf install.sh`
 
 Run: `nix build . --no-link`
+
+Run: `nix-build --no-out-link`
+
+Run: `uv run python -c 'from pathlib import Path; import yaml; yaml.safe_load(Path(".github/workflows/setup-project.yaml").read_text())'`
 
 Run: `uv run ruff .`
 
@@ -2100,18 +2159,18 @@ Run: `uv run bandit -r src`
 
 Expected: every command exits 0.
 
-No new test asserts static dependency, Nix, release, or documentation text. The build and smoke commands verify those files.
+No new test asserts static dependency, workflow, Nix, release, or documentation text. The syntax, build, and smoke commands verify those files.
 
-- [ ] **Step 10: Run the final repository gate**
+- [ ] **Step 11: Run the final repository gate**
 
 Run: `uv run pre-commit run --all-files`
 
 Expected: every hook passes.
 
-- [ ] **Step 11: Commit compatibility, packaging, and documentation**
+- [ ] **Step 12: Commit compatibility, packaging, CI, and documentation**
 
 ```bash
-git add src/scaf_cli/legacy.py src/scaf_cli/cli.py install.sh default.nix flake.nix .releaserc.json README.md CONTRIBUTING.md tests/integration/test_legacy_cli.py
+git add src/scaf_cli/legacy.py src/scaf_cli/cli.py install.sh default.nix flake.nix .releaserc.json .github/workflows/setup-project.yaml README.md CONTRIBUTING.md tests/integration/test_legacy_cli.py
 git commit -m "feat(compose): ship v1 command suite"
 ```
 
@@ -2151,6 +2210,7 @@ uv run bandit -r src
 shellcheck scaf install.sh
 uv build
 nix build . --no-link
+nix-build --no-out-link
 uv run pre-commit run --all-files
 ```
 
