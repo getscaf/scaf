@@ -47,7 +47,9 @@ nix-shell -p "(with import <nixpkgs> {}; callPackage (builtins.fetchTarball http
 
 ## Creating a new project using this repo
 
-First, copy (& optionally customize) the `.envrc.example` file to `.envrc`!
+Use the committed `.envrc` file. Run `direnv allow` to load the environment.
+For personal overrides, create `.envrc.local`. Git ignores this file, and direnv
+loads it after the shared configuration.
 
 Run `scaf myproject`, answer all the questions, and you'll have your new
 project!
