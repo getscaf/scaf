@@ -388,3 +388,4 @@ dist
 
 # nix-build output
 result
+.envrc.local
