@@ -22,7 +22,21 @@ Installation is supported on Linux and macOS:
 curl -sSL https://raw.githubusercontent.com/sixfeetup/scaf/main/install.sh | bash
 ```
 
-The installation script will install kubectl, kind, Tilt and uv if it can't be
+Before installing, ensure these dependencies are available:
+
+- Bash
+- curl >= 7.8.0
+- make >= 3.8
+- Python 3 >= 3.6
+- Docker >= 19.0
+- Git >= 2.0
+- rsync >= 3.2.0
+
+The rsync included with macOS may not meet the required version. Install a newer
+version with `brew install rsync`. The installer reports missing or outdated
+dependencies with installation instructions and stops until they are resolved.
+
+The installation script will install kubectl, kind, Tilt and uv if they can't be
 found on your system.
 
 ### Nix

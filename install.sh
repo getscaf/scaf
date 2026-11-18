@@ -2,15 +2,17 @@
 
 BRANCH=${SCAF_SCRIPT_BRANCH:-main}
 SCAF_SCRIPT_URL="https://raw.githubusercontent.com/sixfeetup/scaf/${BRANCH}/scaf"
-TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'tmp')/$(echo -n "$(date +%s%N)" | md5sum | awk '{print $1}')
-mkdir -p "$TEMP_DIR"
+TEMP_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'tmp') || {
+    printf '%s\n' "Failed to create a temporary directory." >&2
+    exit 1
+}
 TEMP_DOWNLOAD="$TEMP_DIR/scaf"
 PREFERRED_BIN_FOLDER=${PREFERRED_BIN_FOLDER:-"${HOME}/.local/bin"}
 DESTINATION="${PREFERRED_BIN_FOLDER}/scaf"
 
 
 # These are dependencies that we depend on the user to have installed:
-dependencies="bash>=4.0 curl>=7.8.0 make>=3.8 python3>=3.6 docker>=19.0 git>=2.0 rsync>=3.2.0"
+dependencies="bash curl>=7.8.0 make>=3.8 python3>=3.6 docker>=19.0 git>=2.0 rsync>=3.2.0"
 # ^^ Must be in the format of "name>=version" or just "name" if no version is required.
 
 ensure_bin_folder() {
@@ -42,12 +44,8 @@ version_compare() {
     installed="$1"
     required="$2"
 
-    IFS='.'
-    set -- $installed
-    installed_parts="$@"
-    set -- $required
-    required_parts="$@"
-    unset IFS
+    installed_parts=$(printf '%s\n' "$installed" | tr '.' ' ')
+    required_parts=$(printf '%s\n' "$required" | tr '.' ' ')
 
     i=1
     for req in $required_parts; do
@@ -86,21 +84,16 @@ check_top_level_dependencies() {
         version=$(echo "$dep" | grep -o '[0-9.]\+$')
 
         if ! command_exists "$name"; then
-            missing="$missing $name"
+            missing="$missing
+$name"
         elif [ -n "$version" ]; then
             if ! version_satisfies "$name" "$version"; then
                 detected_version=$("$name" --version | grep -oE '[0-9]+(\.[0-9]+)+' | head -n 1)
-                missing="$missing\n$name>=$version but found $detected_version"
+                missing="$missing
+$name>=$version but found $detected_version"
             fi
         fi
     done
-
-    # Check if python commands exist
-    if command -v python &>/dev/null || command -v python3 &>/dev/null; then
-        :
-    else
-        missing="$missing python3"
-    fi    
 
     if [ -z "$missing" ]; then
         echo "All top-level dependencies are installed and meet the required versions."
@@ -108,7 +101,7 @@ check_top_level_dependencies() {
     fi
 
     echo "The following dependencies are missing or do not meet the required versions:"
-    echo $missing
+    printf '%s\n' "$missing"
 
     os=$(uname -s 2>/dev/null || echo "Unknown")
     if [ "$os" = "Linux" ] && [ -f /proc/version ] && grep -qi microsoft /proc/version; then
@@ -121,11 +114,14 @@ check_top_level_dependencies() {
     #       for those rather then strictly by OS.
 
     # Process $missing line by line instead of word by word.
-    echo "$missing" | while IFS= read -r dep; do
+    printf '%s\n' "$missing" | while IFS= read -r dep; do
         [ -z "$dep" ] && continue  # Skip empty lines.
         case $dep in
             bash*)
-                echo "Please install bash for consistent shell execution."
+                echo "Please install bash:"
+                echo "  - Ubuntu/Debian: sudo apt-get update && sudo apt-get install bash"
+                echo "  - CentOS/Fedora: sudo yum install bash"
+                echo "  - macOS: brew install bash"
                 ;;
             curl*)
                 echo "Please install curl:"

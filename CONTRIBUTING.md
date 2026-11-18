@@ -49,6 +49,12 @@ packages.
 
 ### Testing
 
+Run the installer tests from the repository root with Python 3:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
 To test the copier portion of Scaf, run the `./test-scaf.sh` script.
 
 If you are not using the Nix development environment, create a virtual environment and
