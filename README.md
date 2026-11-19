@@ -28,7 +28,7 @@ Before installing, ensure these dependencies are available:
 - curl >= 7.8.0
 - make >= 3.8
 - Python 3 >= 3.6
-- Docker >= 19.0
+- Docker >= 19.0 (must be running for templates that use Docker)
 - Git >= 2.0
 - rsync >= 3.2.0
 
@@ -64,6 +64,11 @@ nix-shell -p "(with import <nixpkgs> {}; callPackage (builtins.fetchTarball http
 Use the committed `.envrc` file. Run `direnv allow` to load the environment.
 For personal overrides, create `.envrc.local`. Git ignores this file, and direnv
 loads it after the shared configuration.
+
+For templates that use Docker, such as the Six Feet Up Full Stack Template,
+start Docker Desktop or your Docker-compatible runtime before creating a project.
+See [Docker troubleshooting](#docker-is-unavailable-during-project-creation)
+if Docker is unavailable.
 
 Run `scaf myproject`, answer all the questions, and you'll have your new
 project!
@@ -110,6 +115,25 @@ Examples:
       # Example with full path to CLI, using defaults and specific VCS reference.
       # REPO_URL must be one of the allowed template URLs above.
 ```
+
+## Troubleshooting
+
+### Docker is unavailable during project creation
+
+If setup reports that Docker is required or its daemon is not reachable:
+
+- Install Docker if the `docker` command is missing.
+- On macOS, start Docker Desktop or your Docker-compatible runtime and wait
+  until it is ready.
+- On Linux with systemd and a system-managed Docker Engine installation, run
+  `sudo systemctl start docker`.
+- If Docker is already running, use `docker context ls` to check the selected
+  daemon and check `DOCKER_HOST` / `DOCKER_CONTEXT` for overrides. See the
+  [Docker context documentation](https://docs.docker.com/engine/manage-resources/contexts/).
+
+Run `docker info` in the same terminal you use for `scaf` and retry once it
+succeeds. See Docker's [daemon troubleshooting guide](https://docs.docker.com/engine/daemon/troubleshoot/)
+for further help.
 
 ## Contributing
 
