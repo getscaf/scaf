@@ -221,6 +221,8 @@ They may not reference child render output or the compose context.
 
 A value that is exactly one `{{ ... }}` expression keeps the type of its result. A parent string answer such as `"3.10"` stays the string `"3.10"`, and a boolean or list stays a boolean or list. Scaf never reparses a string result as a Python literal. Any other value that contains Jinja renders to text.
 
+Scaf evaluates mappings in the parent template's Copier Jinja environment, so they accept the same filters, extensions, and delimiters as the parent's own templates. A syntax error, an evaluation error, or an undefined result raises `ScafAnswerError` that names the child and the answer key.
+
 #### `exclude`
 
 Optional. Files removed entirely from Compose processing.

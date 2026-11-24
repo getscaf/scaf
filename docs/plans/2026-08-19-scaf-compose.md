@@ -817,7 +817,8 @@ git commit -m "feat(compose): resolve Git sources"
 - Produces: `Copier81Compatibility.render_without_tasks(worker: copier.Worker) -> None`
 - Produces: `Copier81Compatibility.finalize_tasks(worker: copier.Worker) -> tuple[DeferredTask, ...]`
 - Produces: `collect_parent_answers(source: ResolvedSource, supplied: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool) -> Mapping[str, object]`
-- Produces: `evaluate_answer_mapping(mapping: Mapping[str, object], parent_answers: Mapping[str, object]) -> Mapping[str, object]`
+- Produces: `Copier81Compatibility.answer_environment(worker: copier.Worker) -> jinja2.Environment`
+- Produces: `evaluate_answer_mapping(child_name: str, mapping: Mapping[str, object], parent_answers: Mapping[str, object], environment: jinja2.Environment) -> Mapping[str, object]`
 - Produces: `resolve_child_answers(child_name: str, source: ResolvedSource, supplied: Mapping[str, object]) -> Mapping[str, object]`
 - Consumes: `ResolvedSource`, `DependencySpec`, `ScafAnswerError`, and `ScafValidationError`
 
@@ -844,6 +845,9 @@ Test these exact cases:
 - An exact expression with whitespace control, such as `{{- python_version -}}`, and an exact expression with a filter return the expression value.
 - A partial Jinja string produces text.
 - A child mapping cannot access child output or an unknown variable.
+- A mapping can use an Ansible filter such as `regex_replace` and a filter from a parent `_jinja_extensions` fixture.
+- A mapping works with parent `_envops` that change the variable delimiters.
+- A Jinja syntax error, an evaluation error such as `{{ python_version + 1 }}`, and an undefined attribute such as `{{ project_name.missing }}` each raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A monkeypatched incompatible Copier version fails before any private Worker call.
 
 - [ ] **Step 3: Run the answer tests and verify the missing behavior**
@@ -882,57 +886,91 @@ class Copier81Compatibility:
 
 - [ ] **Step 5: Evaluate mapped answers as Jinja expressions**
 
+Evaluate mappings in the parent Worker's Jinja environment, not in a bare `jinja2.Environment`. Copier's environment loads `jinja2_ansible_filters`, the parent `_jinja_extensions` and `_envops`, and globals such as `pathjoin`. A mapping must accept the same filters and delimiters as the parent's own templates. Add this adapter method in `copier_compat.py`:
+
+```python
+class Copier81Compatibility:
+    def answer_environment(self, worker: Worker) -> jinja2.Environment:
+        self.require_supported_version()
+        return worker.jinja_env.overlay(undefined=StrictUndefined)
+```
+
 ```python
 import re
 
-from jinja2 import Environment, StrictUndefined, meta, nodes
-
-EXACT_EXPRESSION = re.compile(r"\{\{-?(.*?)-?\}\}\n?", re.DOTALL)
+import jinja2
+from jinja2 import meta, nodes
 
 
 def evaluate_answer_mapping(
-    mapping: Mapping[str, object], parent_answers: Mapping[str, object]
+    child_name: str,
+    mapping: Mapping[str, object],
+    parent_answers: Mapping[str, object],
+    environment: jinja2.Environment,
 ) -> dict[str, object]:
-    environment = Environment(undefined=StrictUndefined)
+    markers = (
+        environment.variable_start_string,
+        environment.block_start_string,
+        environment.comment_start_string,
+    )
+    exact_source = re.compile(
+        re.escape(environment.variable_start_string)
+        + r"-?(.*?)-?"
+        + re.escape(environment.variable_end_string)
+        + r"\n?",
+        re.DOTALL,
+    )
+    allowed = parent_answers.keys() | environment.globals.keys()
     result: dict[str, object] = {}
     for name, value in mapping.items():
-        if not isinstance(value, str):
+        if not isinstance(value, str) or not any(m in value for m in markers):
             result[name] = value
             continue
-        if not any(marker in value for marker in ("{{", "{%", "{#")):
-            result[name] = value
-            continue
-        ast = environment.parse(value)
-        unknown = meta.find_undeclared_variables(ast) - parent_answers.keys()
+        label = f"Child '{child_name}' answer '{name}'"
+        try:
+            ast = environment.parse(value)
+        except jinja2.TemplateSyntaxError as error:
+            raise ScafAnswerError(f"{label} has invalid Jinja: {error.message}") from error
+        unknown = meta.find_undeclared_variables(ast) - allowed
         if unknown:
             names = ", ".join(sorted(unknown))
-            raise ScafValidationError(f"Child answer '{name}' uses unknown variables: {names}")
+            raise ScafValidationError(f"{label} uses unknown variables: {names}")
         exact_expression = (
             len(ast.body) == 1
             and isinstance(ast.body[0], nodes.Output)
             and len(ast.body[0].nodes) == 1
             and not isinstance(ast.body[0].nodes[0], nodes.TemplateData)
         )
-        if exact_expression:
-            source = EXACT_EXPRESSION.fullmatch(value)
-            if source is None:
-                raise ScafValidationError(f"Child answer '{name}' is not one expression")
-            expression = environment.compile_expression(
-                source.group(1), undefined_to_none=False
-            )
-            result[name] = expression(**parent_answers)
-        else:
-            result[name] = environment.from_string(value).render(**parent_answers)
+        try:
+            if exact_expression:
+                source = exact_source.fullmatch(value)
+                if source is None:
+                    raise ScafValidationError(f"{label} is not one expression")
+                expression = environment.compile_expression(
+                    source.group(1), undefined_to_none=False
+                )
+                evaluated = expression(**parent_answers)
+            else:
+                evaluated = environment.from_string(value).render(**parent_answers)
+        except ScafError:
+            raise
+        except Exception as error:
+            raise ScafAnswerError(f"{label} failed: {type(error).__name__}: {error}") from error
+        if isinstance(evaluated, jinja2.Undefined):
+            raise ScafAnswerError(f"{label} is undefined: {value}")
+        result[name] = evaluated
     return result
 ```
 
 Do not use `jinja2.nativetypes.NativeEnvironment`. Its `render()` parses string results as Python literals, so a parent string `"3.10"` would become the float `3.1`. `compile_expression()` returns the value of the expression without converting it to text or reparsing it.
 
+Catch broad `Exception` only around evaluation of the template-supplied expression. Any error there comes from template code, so the user must see a `ScafAnswerError` that names the child and key instead of a traceback.
+
 V1 exposes no additional static answer variables because the specification defines none by name.
 
 - [ ] **Step 6: Resolve child defaults and `when:` with Copier**
 
-Construct every parent and child question Worker with `unsafe=True`. For child answers, use mapped data, `defaults=True`, and quiet mode. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
+Construct every parent and child question Worker with `unsafe=True`. Build the answer-mapping environment with `answer_environment()` from the parent question Worker while that Worker is alive, and pass it to `evaluate_answer_mapping()` for each child. For child answers, use mapped data, `defaults=True`, and quiet mode. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
 
 Return only visible child question values. Do not return Copier metadata keys.
 
