@@ -910,7 +910,7 @@ The single-template fallback preserves the current trusted Copier behavior. It e
 
 Legacy project-creation syntax remains an adapter to `scaf create`. Legacy failures now use exit code 2 instead of exit code 1.
 
-The legacy `--upgrade` flag runs `uv tool install --force` from the Scaf `main` branch. The legacy `--uninstall` flag runs `uv tool uninstall scaf`. It also removes a pre-uv single-file installation from `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` when present.
+The legacy `--upgrade` flag runs `uv tool install --force` from the Scaf `main` branch. The installer and `--upgrade` keep honoring `PREFERRED_BIN_FOLDER` by passing it to uv as `UV_TOOL_BIN_DIR`. The legacy `--uninstall` flag runs `uv tool uninstall scaf`. It also removes a pre-uv single-file installation from `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` when present.
 
 ### 14.2 `scaf preview`
 

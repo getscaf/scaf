@@ -2046,7 +2046,7 @@ Normalize project creation to the new `create <repo> <destination>` contract. Pr
 
 Mock upgrade and uninstall process calls. Do not alter the user environment during tests.
 
-Assert that `--upgrade` runs `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. Assert that `--uninstall` runs `uv tool uninstall scaf` and removes a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file. Assert that normalized legacy command errors exit with code 2.
+Assert that `--upgrade` runs `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. Assert that, when `PREFERRED_BIN_FOLDER` is set, `--upgrade` passes it to uv as `UV_TOOL_BIN_DIR`, and that an explicit `UV_TOOL_BIN_DIR` is not overridden when `PREFERRED_BIN_FOLDER` is unset. Assert that `--uninstall` runs `uv tool uninstall scaf` and removes a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file. Assert that normalized legacy command errors exit with code 2.
 
 - [ ] **Step 2: Run the legacy tests and verify failure**
 
@@ -2062,17 +2062,20 @@ Return `{"is_project_slug": slug.replace("-", "_")}` in `LegacyInvocation.inject
 
 Keep `--upgrade` and `--uninstall` as top-level maintenance flags.
 
-Implement `--upgrade` with `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. Implement `--uninstall` with `uv tool uninstall scaf`. If a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file exists, remove it.
+Implement `--upgrade` with `uv tool install --force "git+https://github.com/sixfeetup/scaf.git@main"`. When `PREFERRED_BIN_FOLDER` is set, run uv with `UV_TOOL_BIN_DIR` set to that value. Implement `--uninstall` with `uv tool uninstall scaf`. If a pre-uv `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` file exists, remove it.
 
 - [ ] **Step 4: Replace single-file installation with `uv tool` installation**
 
 Make `install.sh` install the selected Git ref as an application:
 
 ```bash
-uv tool install --force "git+https://github.com/sixfeetup/scaf.git@${BRANCH}"
+PREFERRED_BIN_FOLDER="${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}"
+UV_TOOL_BIN_DIR="$PREFERRED_BIN_FOLDER" uv tool install --force "git+https://github.com/sixfeetup/scaf.git@${BRANCH}"
 ```
 
-Keep the existing dependency bootstrap and destination diagnostics. Verify that the generated console script resolves to the installed package.
+`uv tool install` ignores `PREFERRED_BIN_FOLDER`, so the installer must map it to `UV_TOOL_BIN_DIR`. Keep the existing dependency bootstrap and destination diagnostics; they check the same `PREFERRED_BIN_FOLDER` that uv now writes to. Verify that the generated console script resolves to the installed package.
+
+Add an installer test that sets `PREFERRED_BIN_FOLDER` to a temporary directory and points `UV_TOOL_DIR` at isolated temporary tool storage. Assert that `scaf` appears in that directory and nowhere under the real `$HOME/.local/bin`.
 
 Convert `install.sh` to explicit Bash because it already uses arrays, `&>`, and `OSTYPE`. Use `#!/usr/bin/env bash` and `set -euo pipefail`.
 
