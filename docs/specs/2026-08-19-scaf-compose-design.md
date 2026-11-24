@@ -773,6 +773,10 @@ Parent `_tasks`, if any, run once in the staged project after managed output and
 
 Copier 8.1 runs these tasks as ordinary subprocesses with the invoking user's permissions and the staging root as their working directory. Scaf does not sandbox them. Template authors must confine task writes to staging; writes to the destination by absolute path or to any other external path are unsupported and cannot be detected or rolled back reliably.
 
+Tasks run at the sibling staging path `.<destination-name>.scaf-*`, which Scaf renames to the destination only after tasks finish. A task must not write that absolute path into project files. For example, a virtual environment that a task creates records the staging path and breaks after the rename. Templates should leave such steps, for example `uv sync`, to a documented post-create step.
+
+Scaf renders parent files and parent task commands with Copier's `_folder_name` set to the final directory name: the `create` destination name, the project directory name during `update`, and `scaf-preview` during `preview`. `_copier_conf.dst_path` and any other absolute destination path are unsupported in parent templates and tasks, because they name a temporary directory.
+
 A task's in-staging file side effects are not added to managed state. A task-created file remains unmanaged, and a task modification to a managed file appears as a local modification during the first update. Tasks must not modify staged `.scaf/` metadata; Scaf checks it after tasks and raises `ScafTemplateError` if it changed.
 
 A non-zero exit, signal, or forbidden metadata change aborts create. At this process boundary, Scaf stops before later tasks or the commit rename, removes the staging directory, and raises `ScafTemplateError` with the task command and exit or signal details. External task side effects may remain; Scaf reports them when known but must not delete or rewrite paths it did not create through the staged pipeline.

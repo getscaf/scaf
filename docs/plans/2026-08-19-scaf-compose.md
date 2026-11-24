@@ -1103,7 +1103,7 @@ git commit -m "feat(compose): render isolated children"
 - Produces: `build_parent_context(children: Sequence[ChildRender], required_paths: Sequence[str]) -> Mapping[str, object]`
 - Produces: `register_builtin_filters(environment: jinja2.Environment) -> None`
 - Produces: `ParentRender(files: Mapping[str, FileRecord], deferred_tasks: tuple[DeferredTask, ...])`
-- Produces: `render_parent(source: ResolvedSource, parent_answers: Mapping[str, object], scaf_context: Mapping[str, object]) -> ParentRender`
+- Produces: `render_parent(source: ResolvedSource, parent_answers: Mapping[str, object], scaf_context: Mapping[str, object], folder_name: str) -> ParentRender`
 - Produces: `run_parent_tasks(tasks: Sequence[DeferredTask], staging_root: Path) -> None`
 - Consumes: `ChildRender`, `DeferredTask`, and parent answers
 
@@ -1137,6 +1137,8 @@ assert context == {
 }
 ```
 
+Render a parent file containing `{{ _folder_name }}` with `folder_name="my-app"` and assert that it renders `my-app`. Render a parent task that writes `$PWD` to a file during `create`, and assert that the recorded path is the staging directory, which pins the documented limit.
+
 Render a parent fixture with `_subdirectory: template`, root `scaf.yaml`, and `template/README.md.jinja`. Assert that the output contains root `README.md` and contains neither `template/README.md`, `scaf.yaml`, nor `copier.yaml`.
 
 Test strict missing-key errors, static binary parent files, Jinja binary rejection, parent extensions, duplicate static/Jinja destination paths, and rejected parent symlink output.
@@ -1164,6 +1166,8 @@ Sort child paths. Preserve compose declaration order in `required_paths`. Includ
 Pass parent answers in the flat data of Copier and pass `scaf` as one additional data key. Add built-in filters to the existing Copier Worker Jinja environment. Parent extensions must remain active.
 
 Set `StrictUndefined` before rendering. Use the task-free render path from Task 6. While the Copier Worker and extension environment are alive, call `Copier81Compatibility.finalize_tasks()`. Store only finalized commands and environment values in `ParentRender`.
+
+Render into `<temporary directory>/<folder_name>` so that Copier's `_folder_name` equals the final directory name. Callers pass the `create` destination name, the project directory name during `update`, and `scaf-preview` during `preview`.
 
 Before rendering, map static and `.jinja` source paths to final paths. If both forms target one output, raise `ScafValidationError`.
 
