@@ -513,7 +513,9 @@ For `update`, Scaf applies the prepared plan with same-directory temporary files
 
 A write, rename, delete, mode-change, or state-persistence failure triggers rollback at this transaction boundary. Scaf restores every backed-up path and the previous `.scaf/` metadata and removes newly created paths without deleting backup data during rollback. After restoration is durable, it atomically renames `<id>.prepared/` to `<id>.aborted/` and may recursively clean up that directory. Scaf then raises `ScafTransactionError` with the failed operation and path. It must not continue with a partial update or silently retain mixed candidate and previous state. If rollback also fails, Scaf retains the `.prepared` journal and reports both failures.
 
-Before `scaf update` or `scaf status` does other work, it checks journal directory suffixes. A `.prepared` journal is rolled back idempotently. A `.committed` or `.aborted` journal is terminal and receives cleanup only; recursive cleanup never changes its suffix, so a crash during deletion cannot make it look uncommitted. A `.tmp` journal predates project mutation and can be removed. Recovery failure raises `ScafTransactionError` and blocks further mutation until recovery succeeds.
+Before `scaf update` or `scaf status` does other work, it takes an exclusive, non-blocking operating-system advisory lock on `.scaf/scaf.lock`. It creates that file when it is absent and never deletes it. If another process holds the lock, the command raises `ScafTransactionError` and says that another Scaf process is using the project; it does not wait, recover, or read state. The command holds the lock until it has finished all work, including recovery, the update transaction, and terminal journal cleanup. Recovery therefore never acts on a journal that a live process owns.
+
+After it holds the lock, the command checks journal directory suffixes. A `.prepared` journal is rolled back idempotently. A `.committed` or `.aborted` journal is terminal and receives cleanup only; recursive cleanup never changes its suffix, so a crash during deletion cannot make it look uncommitted. A `.tmp` journal predates project mutation and can be removed. Recovery failure raises `ScafTransactionError` and blocks further mutation until recovery succeeds.
 
 ---
 
@@ -627,6 +629,7 @@ Scaf stores local state under `.scaf/`:
 ├── manifest.yml
 ├── lock.yml
 ├── state.json
+├── scaf.lock      # process lock for update and status; not project state
 ├── answers/
 │   ├── parent.yml
 │   ├── python.yml

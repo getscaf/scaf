@@ -1678,6 +1678,7 @@ git commit -m "feat(compose): plan safe updates"
 - Create: `src/scaf_cli/journal.py`
 - Create: `src/scaf_cli/transactions.py`
 - Create: `src/scaf_cli/recovery.py`
+- Create: `src/scaf_cli/project_lock.py`
 - Create: `tests/support/failing_file_ops.py`
 - Create: `tests/unit/test_transactions.py`
 - Create: `tests/integration/test_transaction_recovery.py`
@@ -1689,6 +1690,7 @@ git commit -m "feat(compose): plan safe updates"
 - Produces: `commit_transaction(transaction: PreparedTransaction) -> None`
 - Produces: `rollback_transaction(transaction: PreparedTransaction) -> None`
 - Produces: `recover_transactions(project_root: Path) -> None`
+- Produces: `project_lock(project_root: Path) -> ContextManager[None]`
 - Consumes: `ReconciliationPlan` and serialized project state
 
 - [ ] **Step 1: Write failing journal layout tests**
@@ -1795,6 +1797,10 @@ Assert:
 - Cleanup never changes a terminal suffix.
 - Recovery failure blocks update and status work.
 - Recovery works in a new process with no in-memory `PreparedTransaction`.
+- `project_lock()` creates `.scaf/scaf.lock` when absent and never deletes it.
+- While a child process holds `project_lock()` with a `.prepared` journal present, a second process's `project_lock()` raises `ScafTransactionError` at once. The journal, managed files, and state stay unchanged.
+- After the holding process exits without releasing the lock explicitly, the operating system frees it and a new process can recover the `.prepared` journal.
+- Candidate `.scaf/` persistence and rollback preserve `.scaf/scaf.lock`.
 - Unknown journal schema versions, fields, operations, duplicate IDs, unsafe project paths, or invalid backup references block recovery.
 - A nested new file creates and records each missing directory.
 - Reverse rollback removes only transaction-created empty directories and retains every pre-existing directory.
@@ -1835,16 +1841,20 @@ Keep backup data until rollback reaches a durable terminal state. Rename `.prepa
 
 On failure, restore backups and prior metadata. Remove created paths. Rename `.prepared` to `.aborted` only after durable restoration.
 
-- [ ] **Step 7: Run the transaction tests**
+- [ ] **Step 7: Implement the project lock**
+
+Open `.scaf/scaf.lock` with `O_CREAT` and take `fcntl.flock(fd, LOCK_EX | LOCK_NB)`. Translate `BlockingIOError` into `ScafTransactionError` that names the lock path. Release the lock and close the descriptor on exit. Never unlink the lock file. Make `recover_transactions()` require a held lock so that no caller can recover without one.
+
+- [ ] **Step 8: Run the transaction tests**
 
 Run: `uv run pytest tests/unit/test_transactions.py tests/integration/test_transaction_recovery.py -q`
 
 Expected: all tests pass.
 
-- [ ] **Step 8: Commit transaction support**
+- [ ] **Step 9: Commit transaction support**
 
 ```bash
-git add src/scaf_cli/journal.py src/scaf_cli/transactions.py src/scaf_cli/recovery.py tests/support/failing_file_ops.py tests/unit/test_transactions.py tests/integration/test_transaction_recovery.py
+git add src/scaf_cli/journal.py src/scaf_cli/transactions.py src/scaf_cli/recovery.py src/scaf_cli/project_lock.py tests/support/failing_file_ops.py tests/unit/test_transactions.py tests/integration/test_transaction_recovery.py
 git commit -m "feat(compose): add recoverable transactions"
 ```
 
@@ -1899,6 +1909,7 @@ Expected: FAIL because full-graph update does not exist.
 - [ ] **Step 4: Implement update in the specification order**
 
 ```text
+0. Take project_lock() and hold it through step 12.
 1. Recover or clean terminal journals.
 2. Load manifest, lock, answers, and managed state.
 3. Enter one `ResolutionWorkspace` for the complete update.
@@ -1952,7 +1963,7 @@ git commit -m "feat(compose): update composed projects"
 
 Assert parent and child locks, owner counts, excluded and suppressed counts, and detectable local conflicts.
 
-Assert recovery before report generation. Assert that a recovery failure blocks the report. Reject missing or malformed `.scaf/` state with a user-facing error.
+Assert recovery before report generation. Assert that a recovery failure blocks the report. Assert that `status` raises `ScafTransactionError` and leaves a `.prepared` journal unchanged while another process holds `project_lock()`. Reject missing or malformed `.scaf/` state with a user-facing error.
 
 Replace a managed file and a managed ancestor with symlinks to an outside sentinel. Report both as unsafe local conflicts without reading the sentinel.
 
@@ -1964,7 +1975,7 @@ Expected: FAIL because local status does not exist.
 
 - [ ] **Step 3: Implement status after recovery**
 
-Read state without source resolution. Validate each managed path with `lstat()` and `require_safe_ancestors()` before byte access. Compare safe current hashes and modes with managed state. Report conflicts that are detectable without a candidate render.
+Take `project_lock()` before recovery and hold it until the report is built. Read state without source resolution. Validate each managed path with `lstat()` and `require_safe_ancestors()` before byte access. Compare safe current hashes and modes with managed state. Report conflicts that are detectable without a candidate render.
 
 - [ ] **Step 4: Wire and format the status command**
 
