@@ -72,7 +72,7 @@
 - Create `src/scaf_cli/manifest.py` for `scaf.yaml` parsing and normalized models.
 - Create `src/scaf_cli/git_client.py` for Git subprocess calls and repository facts.
 - Create `src/scaf_cli/sources.py` for source location, selector classification, and locks.
-- Create `src/scaf_cli/answers.py` for native Jinja answer mappings.
+- Create `src/scaf_cli/answers.py` for typed Jinja answer mappings.
 - Create `src/scaf_cli/copier_compat.py` for every pinned Copier 8.1.0 private call.
 - Create `src/scaf_cli/copier_questions.py` for parent and child question policy.
 - Create `src/scaf_cli/copier_render.py` for pinned task-free Copier rendering.
@@ -836,6 +836,8 @@ Test these exact cases:
 - An unknown mapped child question raises `ScafValidationError`.
 - Plain strings such as `"3.12"`, `"False"`, and `"[1]"` remain strings.
 - An exact Jinja expression preserves a boolean, integer, list, or mapping value.
+- An exact Jinja expression that maps parent string answers `"3.10"`, `"False"`, and `"[1]"` returns those same strings.
+- An exact expression with whitespace control, such as `{{- python_version -}}`, and an exact expression with a filter return the expression value.
 - A partial Jinja string produces text.
 - A child mapping cannot access child output or an unknown variable.
 - A monkeypatched incompatible Copier version fails before any private Worker call.
@@ -874,18 +876,20 @@ class Copier81Compatibility:
         return tuple(result)
 ```
 
-- [ ] **Step 5: Evaluate mapped answers with a native Jinja environment**
+- [ ] **Step 5: Evaluate mapped answers as Jinja expressions**
 
 ```python
+import re
+
 from jinja2 import Environment, StrictUndefined, meta, nodes
-from jinja2.nativetypes import NativeEnvironment
+
+EXACT_EXPRESSION = re.compile(r"\{\{-?(.*?)-?\}\}\n?", re.DOTALL)
 
 
 def evaluate_answer_mapping(
     mapping: Mapping[str, object], parent_answers: Mapping[str, object]
 ) -> dict[str, object]:
-    native_environment = NativeEnvironment(undefined=StrictUndefined)
-    text_environment = Environment(undefined=StrictUndefined)
+    environment = Environment(undefined=StrictUndefined)
     result: dict[str, object] = {}
     for name, value in mapping.items():
         if not isinstance(value, str):
@@ -894,7 +898,7 @@ def evaluate_answer_mapping(
         if not any(marker in value for marker in ("{{", "{%", "{#")):
             result[name] = value
             continue
-        ast = native_environment.parse(value)
+        ast = environment.parse(value)
         unknown = meta.find_undeclared_variables(ast) - parent_answers.keys()
         if unknown:
             names = ", ".join(sorted(unknown))
@@ -905,10 +909,20 @@ def evaluate_answer_mapping(
             and len(ast.body[0].nodes) == 1
             and not isinstance(ast.body[0].nodes[0], nodes.TemplateData)
         )
-        environment = native_environment if exact_expression else text_environment
-        result[name] = environment.from_string(value).render(**parent_answers)
+        if exact_expression:
+            source = EXACT_EXPRESSION.fullmatch(value)
+            if source is None:
+                raise ScafValidationError(f"Child answer '{name}' is not one expression")
+            expression = environment.compile_expression(
+                source.group(1), undefined_to_none=False
+            )
+            result[name] = expression(**parent_answers)
+        else:
+            result[name] = environment.from_string(value).render(**parent_answers)
     return result
 ```
+
+Do not use `jinja2.nativetypes.NativeEnvironment`. Its `render()` parses string results as Python literals, so a parent string `"3.10"` would become the float `3.1`. `compile_expression()` returns the value of the expression without converting it to text or reparsing it.
 
 V1 exposes no additional static answer variables because the specification defines none by name.
 

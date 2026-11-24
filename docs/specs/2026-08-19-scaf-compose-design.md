@@ -219,6 +219,8 @@ Jinja expressions may reference:
 
 They may not reference child render output or the compose context.
 
+A value that is exactly one `{{ ... }}` expression keeps the type of its result. A parent string answer such as `"3.10"` stays the string `"3.10"`, and a boolean or list stays a boolean or list. Scaf never reparses a string result as a Python literal. Any other value that contains Jinja renders to text.
+
 #### `exclude`
 
 Optional. Files removed entirely from Compose processing.
