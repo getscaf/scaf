@@ -1,7 +1,7 @@
 # Scaf Compose — Final v1 Specification
 
-**Version:** 1.0.0-draft  
-**Status:** Proposal  
+**Version:** 1.0.0-draft\
+**Status:** Proposal\
 **Date:** 2026-08-19
 
 ---
