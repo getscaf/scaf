@@ -205,7 +205,11 @@ packaging==25.0
 pyyaml==6.0.2
 pyyaml-include<2
 semantic-version==2.10.0
+black>=24.3
+isort>=5.10
 ```
+
+`black` and `isort` are runtime dependencies because template tasks call them. The default `sixfeetup/scaf-fullstack-template` runs `black` and `isort` with `check=True` from `template/tasks.py`, and the current launcher supplies both (`scaf:146-150`). They use lower bounds instead of exact pins because templates choose their own formatter versions, and the current launcher installs the latest release. The bounds stay compatible with the exact dev-group pins below.
 
 Use one dependency source from `pyproject.toml`:
 
@@ -1129,7 +1133,7 @@ Before rendering, map static and `.jinja` source paths to final paths. If both f
 
 Execute finalized string tasks with `shell=True`. Execute finalized sequence tasks as argument lists with `shell=False`. The task runner must not import Copier or Jinja.
 
-Use the staging root as `cwd`. Inherit the process environment and overlay Copier task variables, including `STAGE=task`. Stop after the first non-zero exit or signal. Raise `ScafTemplateError` with the command and result.
+Use the staging root as `cwd`. Inherit the process environment, put `sysconfig.get_path("scripts")` at the front of `PATH`, and overlay Copier task variables, including `STAGE=task`. Stop after the first non-zero exit or signal. Raise `ScafTemplateError` with the command and result.
 
 - [ ] **Step 8: Run the parent tests**
 
@@ -1396,6 +1400,7 @@ Cover:
 - A dirty local Git parent with uncommitted `scaf.yaml` raises `ScafResolveError`.
 - A parent without `scaf.yaml` uses normal Copier copy behavior.
 - A single-template fallback runs tasks and extensions with Copier trusted mode enabled.
+- A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
 - A child task never runs.
 - A parent task runs once after files and `.scaf/` exist.
@@ -1467,6 +1472,8 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 - [ ] **Step 5: Implement single-template fallback**
 
 Call Copier with the resolved parent locator, explicit destination, parent `--vcs-ref`, merged answer data, defaults setting, and `unsafe=True`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
+
+While Copier runs, put `sysconfig.get_path("scripts")` at the front of `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
 
 Merge answer-file data with `CreateOptions.injected_answers`. Reject duplicate keys with different values before Copier runs.
 

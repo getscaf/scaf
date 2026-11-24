@@ -906,7 +906,7 @@ scaf status
 
 For `create`, `<destination>` is always explicit and follows the assembly rules in §8.5 for both Compose parents and the existing single-template fallback. `--vcs-ref` selects the parent branch, tag, or commit; when omitted, the parent uses Copier 8.1's highest-release-or-`HEAD` default. On `update`, `--vcs-ref` replaces the stored requested parent ref only after a successful reconciliation.
 
-The single-template fallback preserves the current trusted Copier behavior. It enables template tasks and extensions without a separate `--trust` option.
+The single-template fallback preserves the current trusted Copier behavior. It enables template tasks and extensions without a separate `--trust` option. Scaf also keeps supplying `black` and `isort` to template and parent tasks, as the current launcher does, because existing templates run them.
 
 Legacy project-creation syntax remains an adapter to `scaf create`. Legacy failures now use exit code 2 instead of exit code 1.
 
