@@ -90,6 +90,8 @@ parent-template/
 └── template/
 ```
 
+The parent `copier.yaml` must set `_subdirectory: template`. Copier then renders only the `template/` directory, so `copier.yaml` and `scaf.yaml` never become project output and `template/README.md.jinja` renders to the project root as `README.md`. If the setting is missing or names another directory, Scaf raises `ScafValidationError` before it renders any template.
+
 The parent `copier.yaml` defines all user-facing questions. The parent `scaf.yaml` declares child templates, maps parent answers into child answers, classifies child outputs, and declares compose rules.
 
 ---
@@ -801,6 +803,7 @@ Scaf validates:
 11. The parent and every child source resolve to stable Git commits; local working trees are clean.
 12. Every explicit parent and child selector has an unambiguous branch, tag, or commit classification.
 13. The `create` destination does not already exist.
+14. The parent `copier.yaml` sets `_subdirectory: template`.
 
 ### 13.3 Render/Compose-Time Validation
 
@@ -1053,6 +1056,8 @@ compose:
 ### 15.3 Parent `copier.yaml`
 
 ```yaml
+_subdirectory: template
+
 project_name:
   type: str
   help: Project name

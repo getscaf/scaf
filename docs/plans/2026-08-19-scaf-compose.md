@@ -1081,6 +1081,8 @@ assert context == {
 }
 ```
 
+Render a parent fixture with `_subdirectory: template`, root `scaf.yaml`, and `template/README.md.jinja`. Assert that the output contains root `README.md` and contains neither `template/README.md`, `scaf.yaml`, nor `copier.yaml`.
+
 Test strict missing-key errors, static binary parent files, Jinja binary rejection, parent extensions, duplicate static/Jinja destination paths, and rejected parent symlink output.
 
 Add a parent extension used inside a string task and a sequence task. Assert that both commands are finalized before Worker cleanup.
@@ -1390,6 +1392,7 @@ Cover:
 - A task-modified managed file keeps the pre-task state hash and appears locally modified on the first update.
 - Cleanup does not remove an external path that an unsandboxed task created.
 - A Compose parent without `copier.yaml` raises `ScafValidationError`.
+- A Compose parent whose `copier.yaml` omits `_subdirectory: template`, or names another directory, raises `ScafValidationError` before any child or parent render.
 - A Git ref that adds `scaf.yaml` dispatches to Compose.
 - A Git ref that removes `scaf.yaml` dispatches to the single-template flow.
 - Candidate analysis and assembly never create or mutate the destination.
@@ -1415,6 +1418,7 @@ resolve_dispatch
 4. Inspect scaf.yaml in that selected Git tree.
 5. Return single mode if scaf.yaml is absent.
 6. Require a clean local Git source and copier.yaml for Compose mode.
+7. Require `_subdirectory: template` in the parent copier.yaml for Compose mode.
 
 resolve_composition
 1. Parse scaf.yaml and enforce _min_scaf_version.
