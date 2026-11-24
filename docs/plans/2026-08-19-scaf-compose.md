@@ -2098,10 +2098,10 @@ Remove the current ShellCheck classes before the commit:
 
 - [ ] **Step 5: Package the Python application in Nix**
 
-The locked Nixpkgs has top-level Copier 9.4.1 and no `python3Packages.copier`. Define this verified Copier 8.1.0 override in `default.nix`:
+The locked Nixpkgs has top-level Copier 9.4.1 and no `python3Packages.copier`. Top-level `pkgs.copier` is an application, not a Python module: `python3Packages.hasPythonModule pkgs.copier` is `false`, so as a plain dependency it would add none of its Python modules to Scaf's closure. Wrap the override in `toPythonModule` and define it in `default.nix`:
 
 ```nix
-copier81 = pkgs.copier.overridePythonAttrs (old: rec {
+copier81 = pkgs.python3Packages.toPythonModule (pkgs.copier.overridePythonAttrs (old: rec {
   version = "8.1.0";
   src = pkgs.fetchFromGitHub {
     owner = "copier-org";
@@ -2113,10 +2113,12 @@ copier81 = pkgs.copier.overridePythonAttrs (old: rec {
   dependencies =
     builtins.filter (dependency: (dependency.pname or "") != "pydantic") old.dependencies
     ++ [ pkgs.python3Packages.pydantic_1 ];
-});
+}));
 ```
 
-The locked `python3Packages.pyyaml-include` is 1.3.1 and satisfies Copier 8.1.0. Build Scaf with `python3Packages.buildPythonApplication`, `pyproject = true`, and the runtime dependency source from Task 1. Include `copier81` and `pkgs.git` in the wrapped runtime. Preserve the current Nix runtime tool list for legacy templates.
+The source hash and the `pydantic_1` swap come from the earlier design check. That check did not run `nix-build` on the override, so the `nix build` and `nix-build` runs later in this task are the first proof that Copier 8.1.0 builds and passes its check phase on the locked Nixpkgs.
+
+The locked `python3Packages.pyyaml-include` is 1.3.1 and satisfies Copier 8.1.0. Build Scaf with `python3Packages.buildPythonApplication`, `pyproject = true`, and the runtime dependency source from Task 1. List `copier81` in the Scaf package's `dependencies`, and confirm with `python3Packages.requiredPythonModules` that its Python modules are in the closure. Include `pkgs.git` in the wrapped runtime. Preserve the current Nix runtime tool list for legacy templates.
 
 Expose the package from `flake.nix`. Keep ShellCheck for `scaf` and `install.sh`. Add an import and `scaf --version` check to the Nix check phase.
 
