@@ -1473,7 +1473,9 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 
 Call Copier with the resolved parent locator, explicit destination, parent `--vcs-ref`, merged answer data, defaults setting, and `unsafe=True`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
-While Copier runs, put `sysconfig.get_path("scripts")` at the front of `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
+While Copier runs, put `sysconfig.get_path("scripts")` at the front of the task `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
+
+Do not change `os.environ` for this. Copier 8.1.0 runs tasks with `subprocess.run(..., env=local.env)`, and `plumbum.local.env` copies `os.environ` once, when plumbum is first imported. Instead, add `Copier81Compatibility.task_path(scripts: str) -> ContextManager[None]` in `copier_compat.py`. It wraps the Copier call in `plumbum.local.env(PATH=f"{scripts}{os.pathsep}{local.env['PATH']}")`. Run the fallback test in-process, after `scaf_cli` has imported Copier, so that it proves this mechanism.
 
 Merge answer-file data with `CreateOptions.injected_answers`. Reject duplicate keys with different values before Copier runs.
 
