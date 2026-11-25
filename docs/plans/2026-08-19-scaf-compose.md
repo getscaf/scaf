@@ -2181,12 +2181,29 @@ Remove the current ShellCheck classes before the commit:
 
 - [ ] **Step 5: Package the Python application in Nix**
 
+Build the Python package set from the Nixpkgs revision in `flake.lock`, whatever `pkgs` the caller passes. `default.nix` takes `{ pkgs ? import <nixpkgs> {} }`, so `nix-build`, `nix-env -if`, and `callPackage` all use the caller's channel, not the flake lock. On newer channels the Copier override would break: nixpkgs 25.11 and 26.05 build `python3Packages.copier` with `hatchling` and `hatch-vcs`, Copier 8.1.0 needs `poetry-core`, and their `pyyaml-include` 2.x no longer has the `yamlinclude` module that Copier 8.1.0 imports. Read the pin in `default.nix`:
+
+```nix
+{ pkgs ? import <nixpkgs> {} }:
+
+let
+  locked = (builtins.fromJSON (builtins.readFile ./flake.lock)).nodes.nixpkgs.locked;
+  pinnedPkgs = import (builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/${locked.rev}.tar.gz";
+    sha256 = locked.narHash;
+  }) { inherit (pkgs.stdenv.hostPlatform) system; };
+  python3Packages = pinnedPkgs.python3Packages;
+in
+```
+
+Use `pinnedPkgs` and this `python3Packages` everywhere below, including the Copier override, `pydantic_1`, `pyyaml-include`, and `buildPythonApplication`. In `flake.nix`, pass the flake's own `nixpkgs` input, so both entry points build the same closure.
+
 The locked Nixpkgs has top-level Copier 9.4.1 and no `python3Packages.copier`. Top-level `pkgs.copier` is an application, not a Python module: `python3Packages.hasPythonModule pkgs.copier` is `false`, so as a plain dependency it would add none of its Python modules to Scaf's closure. Wrap the override in `toPythonModule` and define it in `default.nix`:
 
 ```nix
-copier81 = pkgs.python3Packages.toPythonModule (pkgs.copier.overridePythonAttrs (old: rec {
+copier81 = python3Packages.toPythonModule (pinnedPkgs.copier.overridePythonAttrs (old: rec {
   version = "8.1.0";
-  src = pkgs.fetchFromGitHub {
+  src = pinnedPkgs.fetchFromGitHub {
     owner = "copier-org";
     repo = "copier";
     tag = "v${version}";
@@ -2195,7 +2212,7 @@ copier81 = pkgs.python3Packages.toPythonModule (pkgs.copier.overridePythonAttrs 
   POETRY_DYNAMIC_VERSIONING_BYPASS = version;
   dependencies =
     builtins.filter (dependency: (dependency.pname or "") != "pydantic") old.dependencies
-    ++ [ pkgs.python3Packages.pydantic_1 ];
+    ++ [ python3Packages.pydantic_1 ];
 }));
 ```
 
@@ -2203,7 +2220,7 @@ The source hash and the `pydantic_1` swap come from the earlier design check. Th
 
 The locked `python3Packages.pyyaml-include` is 1.3.1 and satisfies Copier 8.1.0. Build Scaf with `python3Packages.buildPythonApplication`, `pyproject = true`, and the runtime dependency source from Task 1. List `copier81` in the Scaf package's `dependencies`, and confirm with `python3Packages.requiredPythonModules` that its Python modules are in the closure. Include `pkgs.git` in the wrapped runtime. Preserve the current Nix runtime tool list for legacy templates.
 
-Expose the package from `flake.nix`. Keep ShellCheck for `scaf` and `install.sh`. Add an import and `scaf --version` check to the Nix check phase.
+Keep the README's `nix-env -if` and `nix-shell` commands. They now work on any channel, because `default.nix` pins its own Python package set. Expose the package from `flake.nix`. Keep ShellCheck for `scaf` and `install.sh`. Add an import and `scaf --version` check to the Nix check phase.
 
 - [ ] **Step 6: Update release version replacement**
 
@@ -2247,7 +2264,7 @@ uv run pre-commit run --all-files
 
 Add `astral-sh/setup-uv@v6` before the existing installer E2E step. Correct its repository URL to `https://github.com/sixfeetup/scaf-fullstack-template.git`. Keep the legacy project-creation argument form so CI covers the compatibility adapter and the new `uv tool` installer.
 
-Keep the existing Nix job on `nixos-25.05`. Make sure that `default.nix` uses the Copier 8.1.0 override. Run both `nix-build` and `nix build . --no-link` in that job.
+Keep the existing Nix job on `nixos-25.05`. Make sure that `default.nix` uses the Copier 8.1.0 override. Run both `nix-build` and `nix build . --no-link` in that job. Add a second Nix job on the current stable channel, `nixos-26.05`, that runs `nix-build` and the README's `nix-shell -p "(with import <nixpkgs> {}; callPackage ./. {})" --run "scaf --version"`. It proves that a caller's newer channel still builds the pinned closure.
 
 Do not add a test that asserts workflow YAML text. Validate the workflow syntax directly in Step 10.
 
