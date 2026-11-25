@@ -844,6 +844,7 @@ Test these exact cases:
 - An exact Jinja expression that maps parent string answers `"3.10"`, `"False"`, and `"[1]"` returns those same strings.
 - An exact expression with whitespace control, such as `{{- python_version -}}`, and an exact expression with a filter return the expression value.
 - A partial Jinja string produces text.
+- An expression followed by a comment, such as `{{ python_version }}{# note #}`, renders as text, as the spec says for any value that is not exactly one expression.
 - A child mapping cannot access child output or an unknown variable.
 - A mapping can use an Ansible filter such as `regex_replace` and a filter from a parent `_jinja_extensions` fixture.
 - A mapping works with parent `_envops` that change the variable delimiters.
@@ -942,10 +943,8 @@ def evaluate_answer_mapping(
             and not isinstance(ast.body[0].nodes[0], nodes.TemplateData)
         )
         try:
-            if exact_expression:
-                source = exact_source.fullmatch(value)
-                if source is None:
-                    raise ScafValidationError(f"{label} is not one expression")
+            source = exact_source.fullmatch(value) if exact_expression else None
+            if source is not None:
                 expression = environment.compile_expression(
                     source.group(1), undefined_to_none=False
                 )
