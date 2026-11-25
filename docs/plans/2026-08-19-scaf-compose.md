@@ -256,11 +256,19 @@ dependencies = {file = ["requirements-runtime.in"]}
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.isort]
+profile = "black"
+
+[tool.ruff]
+ignore = ["E501"]
 ```
+
+These settings match the arguments that `.pre-commit-config.yaml` passes to isort (`--profile black`) and ruff (`--ignore E501`). Editors and direct `uv run isort` or `uv run ruff` calls then agree with pre-commit. Without `profile = "black"`, isort wraps long imports in grid style at 79 columns, which black rewrites, so no formatting can pass both tools.
 
 Replace the current `copier`, `sh`, and `binaryornot` preamble in `requirements.in` with `-r requirements-runtime.in`. Keep the code-quality and test dependencies below it.
 
-Keep one formatter version in every place that runs it. Change the `black` rev in `.pre-commit-config.yaml` from `23.9.1` to `24.3.0`, and keep its `isort` rev at `5.12.0`. In `requirements.in`, change `isort==5.10.1` to `isort==5.12.0` and recompile `requirements.txt`. These match the dev-group pins above, so pre-commit and the CI `uv run black --check .` and `uv run isort --check-only .` steps format the same way. Pinning the dev group back to black 23.9.1 instead would conflict with the `black>=24.3` runtime bound.
+Keep one formatter version in every place that runs it. Change the `black` rev in `.pre-commit-config.yaml` from `23.9.1` to `24.3.0`, and keep its `isort` rev at `5.12.0`. In `requirements.in`, change `isort==5.10.1` to `isort==5.12.0` and recompile `requirements.txt`. These match the dev-group pins above, so pre-commit and a local `uv run black` or `uv run isort` format the same way. CI and the gates run these tools only through `pre-commit run --all-files`, so each tool runs once, with one set of options. Pinning the dev group back to black 23.9.1 instead would conflict with the `black>=24.3` runtime bound.
 
 - [ ] **Step 4: Add the minimal package and parser**
 
@@ -1207,7 +1215,7 @@ Before rendering, map static and `.jinja` source paths to final paths. If both f
 
 - [ ] **Step 7: Implement deferred parent task execution**
 
-Execute finalized string tasks with `shell=True`. Execute finalized sequence tasks as argument lists with `shell=False`. The task runner must not import Copier or Jinja.
+Execute finalized string tasks with `shell=True`. Mark that one call `# nosec B602` with a comment that points to the trust contract in spec §12.3: a string task is a trusted shell command by design. Bandit rates B602 as high severity, so it fails pre-commit's `-ll` run without the marker. Do not add `# nosec` anywhere else. Execute finalized sequence tasks as argument lists with `shell=False`. The task runner must not import Copier or Jinja.
 
 Use the staging root as `cwd`. Inherit the process environment, put `sysconfig.get_path("scripts")` at the front of `PATH`, and overlay Copier task variables, including `STAGE=task`. Stop after the first non-zero exit or signal. Raise `ScafTemplateError` with the command and result.
 
@@ -2253,14 +2261,12 @@ Add a `quality` job to `.github/workflows/setup-project.yaml`. Use `actions/chec
 ```bash
 uv sync --extra test --group dev
 uv run pytest -q
-uv run ruff .
-uv run black --check .
-uv run isort --check-only .
-uv run bandit -r src
 shellcheck scaf install.sh
 uv build
 uv run pre-commit run --all-files
 ```
+
+Do not add separate `ruff`, `black`, `isort`, or `bandit` commands. The pre-commit hooks already run them with the repository's options, including bandit's `-ll`.
 
 Add `astral-sh/setup-uv@v6` before the existing installer E2E step. Correct its repository URL to `https://github.com/sixfeetup/scaf-fullstack-template.git`. Keep the legacy project-creation argument form so CI covers the compatibility adapter and the new `uv tool` installer.
 
@@ -2289,14 +2295,6 @@ Run: `nix build . --no-link`
 Run: `nix-build --no-out-link`
 
 Run: `uv run python -c 'from pathlib import Path; import yaml; yaml.safe_load(Path(".github/workflows/setup-project.yaml").read_text())'`
-
-Run: `uv run ruff .`
-
-Run: `uv run black --check .`
-
-Run: `uv run isort --check-only .`
-
-Run: `uv run bandit -r src`
 
 Expected: every command exits 0.
 
@@ -2344,10 +2342,6 @@ Before branch integration, run these commands from the repository root:
 ```bash
 uv sync --extra test --group dev
 uv run pytest -q
-uv run ruff .
-uv run black --check .
-uv run isort --check-only .
-uv run bandit -r src
 shellcheck scaf install.sh
 uv build
 nix build . --no-link
