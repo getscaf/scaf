@@ -172,7 +172,7 @@ Required. A unique identifier for the child. It is used:
 - in `.scaf/answers/<name>.yml`
 - in compose rule `source` and `sources` fields
 
-Because the name is also a file name, Scaf rejects the name `parent` in any letter case, which `.scaf/answers/parent.yml` reserves for the parent answers. Names are unique without regard to letter case: `python` and `Python` in one manifest raise `ScafValidationError`.
+Because the name is also a file name, Scaf rejects the name `parent` in any letter case, which `.scaf/answers/parent.yml` reserves for the parent answers. Names are unique without regard to letter case: `python` and `Python` in one manifest raise `ScafValidationError`. Scaf also rejects any name that is an attribute of a Python `dict`, such as `items`, `keys`, `values`, `get`, `copy`, `update`, or `pop`. Jinja resolves `scaf.children.items` to the `dict` method before the child, so such a child could not be reached with the documented dot syntax.
 
 #### `repo`
 
@@ -814,7 +814,7 @@ Scaf Compose prioritizes clear, actionable errors. Errors should explain what ha
 Scaf validates:
 
 1. `_min_scaf_version` is valid and satisfied when present.
-2. Duplicate dependency names, compared without regard to letter case, and the reserved name `parent`.
+2. Duplicate dependency names, compared without regard to letter case, the reserved name `parent`, and names that are `dict` attributes.
 3. Unknown top-level or strategy-specific fields.
 4. Invalid paths and globs.
 5. Unknown compose strategies.
