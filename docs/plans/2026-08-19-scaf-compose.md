@@ -2257,7 +2257,9 @@ Convert `install.sh` to explicit Bash because it already uses arrays, `&>`, and 
 - Replace `[ -n "$DEBUG" ] && echo ...` with a `debug()` function that prints only when `${DEBUG:-}` is non-empty and always returns 0. Under `set -e`, a false `&&` test as the last command of a function makes the function fail.
 - Add `|| true` to command substitutions whose `grep` may match nothing, such as the version detection at `install.sh:70` and `:92`. Under `pipefail`, a `grep` with no match fails the assignment and stops the script.
 
-Run the installer test with `DEBUG` unset, and once with `DEBUG=1`. Both must reach `uv tool install`.
+- Change the last line of `install_kubectl` (`install.sh:260`) from `kubectl version` to `kubectl version --client`. Without `--client`, kubectl contacts a cluster and exits 1 when none is reachable, which under `set -e` stops the installer right after it installs kubectl, before kind, tilt, uv, and `uv tool install`. The other post-install probes, `kind version`, `tilt version`, and `uv --version`, do not contact a server and can stay. The version detection at `install.sh:70` and `:92` runs `kubectl --version`, which kubectl rejects; the `|| true` above covers it.
+
+Run the installer test with `DEBUG` unset, and once with `DEBUG=1`. Both must reach `uv tool install`. Add a third run with kubectl absent from `PATH` and a stub `curl` that supplies a fake `kubectl` whose `version` command exits 1 unless `--client` is passed. It must also reach `uv tool install`. GitHub's `ubuntu-latest` image already has kubectl, so only this test exercises `install_kubectl`.
 
 Remove the current ShellCheck classes before the commit:
 
