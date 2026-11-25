@@ -400,6 +400,14 @@ def test_globs_are_root_anchored():
     assert not direct_docs.matches("docs/deep/guide.md")
 
 
+def test_bracket_escapes_match_literal_brackets():
+    escaped = RootGlob.parse("pages/[[][[]...slug[]][]].tsx", "exclude")
+    assert escaped.matches("pages/[[...slug]].tsx")
+    assert not RootGlob.parse("pages/[[...slug]].tsx", "exclude").matches(
+        "pages/[[...slug]].tsx"
+    )
+
+
 def test_segment_operators_are_case_sensitive():
     assert RootGlob.parse("src/?.py", "context").matches("src/a.py")
     assert not RootGlob.parse("src/?.py", "context").matches("src/ab.py")
@@ -660,7 +668,7 @@ CONCAT_FIELDS = {"strategy", "sources", "separator", "dedupe_lines", "header"}
 PREFER_FIELDS = {"strategy", "source"}
 ```
 
-Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Reject `*`, `?`, `[`, or `]` in literal compose keys. Keep dependency order and compose mapping order.
+Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Reject `*` or `?` in literal compose keys. Accept `[` and `]` as literal characters, and test a key such as `frontend/pages/content/[[...slug]].tsx`. Keep dependency order and compose mapping order.
 
 - [ ] **Step 5: Run the manifest tests**
 

@@ -132,7 +132,7 @@ compose:
 
 Dependency `exclude`, `suppress`, and `context` entries are POSIX-style globs relative to the child render root.
 
-Each `compose` key is a POSIX-style literal path relative to the final project root. Compose keys do not accept globs. Scaf rejects a compose key that contains `*`, `?`, `[`, or `]`.
+Each `compose` key is a POSIX-style literal path relative to the final project root. Compose keys do not accept globs. Scaf rejects a compose key that contains `*` or `?`. Square brackets are literal characters in a compose key, so a key such as `frontend/pages/content/[[...slug]].tsx` names that file.
 
 Invalid paths include:
 
@@ -149,6 +149,8 @@ Glob operators have these semantics:
 - `?` matches one character within one path segment.
 - `[abc]` and `[!abc]` match character classes within one path segment.
 - A `**` path segment matches zero or more complete path segments.
+
+To match a literal `[` or `]` in a dependency glob, write `[[]` or `[]]`. For example, the glob `frontend/pages/content/[[][[]...slug[]][]].tsx` matches the file `frontend/pages/content/[[...slug]].tsx`. The unescaped name is a character class and does not match itself.
 
 Therefore, `README.md` matches only the root-level file, `docs/*.md` matches Markdown files directly under root-level `docs/`, and `**/README.md` matches root-level and nested copies. Implementations may use any glob engine only if it reproduces these semantics; they must not expose the right-anchored suffix behavior of `pathlib.PurePath.match()`.
 
