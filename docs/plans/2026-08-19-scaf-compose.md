@@ -849,6 +849,7 @@ git commit -m "feat(compose): resolve Git sources"
 - Produces: `Copier81Compatibility.render_without_tasks(worker: copier.Worker) -> None`
 - Produces: `Copier81Compatibility.finalize_tasks(worker: copier.Worker) -> tuple[DeferredTask, ...]`
 - Produces: `collect_parent_answers(source: ResolvedSource, supplied: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool) -> Mapping[str, object]`
+- Produces: `Copier81Compatibility.template_snapshot(worker: copier.Worker) -> Path`
 - Produces: `Copier81Compatibility.answer_environment(worker: copier.Worker) -> jinja2.Environment`
 - Produces: `evaluate_answer_mapping(child_name: str, mapping: Mapping[str, object], parent_answers: Mapping[str, object], environment: jinja2.Environment) -> Mapping[str, object]`
 - Produces: `Copier81Compatibility.secret_questions(worker: copier.Worker) -> frozenset[str]`
@@ -1521,6 +1522,7 @@ Cover:
 - A branch that moves after dispatch inspects it still renders the inspected commit in the single-template fallback.
 - A local Git template with an uncommitted edit and no release tag renders that edit in the single-template fallback, with or without `--vcs-ref HEAD`, as plain Copier does.
 - A local Git template with an uncommitted edit renders the tagged commit, without the edit, when `--vcs-ref` names a tag.
+- A local Git template that gains a committed `scaf.yaml` after dispatch has taken its snapshot still renders the snapshot through the fallback, with no `scaf.yaml` in the output. Inject the commit between `template_snapshot()` and `run_copy()`.
 - A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
 - A child task never runs.
@@ -1594,7 +1596,15 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 
 Call Copier with the resolved parent locator, explicit destination, merged answer data, defaults setting, and `unsafe=True`. For a Git source, pass the full commit that dispatch inspected, `DispatchResult.source.commit`, as Copier's `vcs_ref`, not the requested `--vcs-ref`. Copier then renders the same commit that dispatch checked for `scaf.yaml`, even if the branch moves in between. For a non-Git local directory, pass no `vcs_ref`.
 
-Keep one exception so that local template work keeps today's behavior. For a local Git working tree whose selected ref is `HEAD`, pass `"HEAD"` instead of the commit. The selected ref is `HEAD` when the user passes `--vcs-ref HEAD`, or omits `--vcs-ref` and the repository has no release tag. Copier 8.1.0 includes uncommitted changes and shows `DirtyLocalWarning` only when `vcs_ref` is `None` or `"HEAD"` (`copier/vcs.py`). The race that the commit pin prevents does not apply here: dispatch has already rejected an uncommitted `scaf.yaml`, so the working tree it inspected is still a single-template source. Remote sources, tags, branches, and explicit commits keep the commit pin. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
+Keep one exception so that local template work keeps today's behavior. A local Git working tree whose selected ref is `HEAD` must render its uncommitted changes, as plain Copier does. The selected ref is `HEAD` when the user passes `--vcs-ref HEAD`, or omits `--vcs-ref` and the repository has no release tag. Copier 8.1.0 includes uncommitted changes and shows `DirtyLocalWarning` only when `vcs_ref` is `None` or `"HEAD"` (`copier/vcs.py`).
+
+Passing `"HEAD"` to a fresh Copier call would read the working tree a second time, after dispatch. Another process could commit a `scaf.yaml` in between, and Copier would then render a Compose parent without `.scaf/` state. So take one snapshot and use it for both steps:
+
+1. Build the Copier `Worker` with the local path and `vcs_ref="HEAD"`.
+2. Call `Copier81Compatibility.template_snapshot(worker) -> Path`, which returns `worker.template.local_abspath`. Copier copies the working tree, including uncommitted changes, into that directory once; `Worker.template` and `Template.local_abspath` are cached properties in 8.1.0.
+3. Run dispatch's `scaf.yaml` check on that snapshot. If it has no `scaf.yaml`, call `run_copy()` on the same `Worker`, which renders the same snapshot. If it has one, drop the `Worker` and continue with normal Compose resolution, which requires a clean tree and pins a commit.
+
+The original path stays Copier's `src_path`, so Copier records it, not the snapshot. Remote sources, tags, branches, and explicit commits keep the commit pin. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
 While Copier runs, put `sysconfig.get_path("scripts")` at the front of the task `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
 
