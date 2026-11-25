@@ -868,6 +868,7 @@ Test these exact cases:
 - A child mapping cannot access child output or an unknown variable.
 - A mapping can use an Ansible filter such as `regex_replace` and a filter from a parent `_jinja_extensions` fixture.
 - A mapping works with parent `_envops` that change the variable delimiters.
+- An unknown filter such as `{{ project_name | misspelled_filter }}` and an unknown test such as `{% if project_name is misspelled_test %}x{% endif %}` raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A Jinja syntax error, an evaluation error such as `{{ python_version + 1 }}`, and an undefined attribute such as `{{ project_name.missing }}` each raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A monkeypatched incompatible Copier version fails before any private Worker call.
 
@@ -950,9 +951,12 @@ def evaluate_answer_mapping(
         label = f"Child '{child_name}' answer '{name}'"
         try:
             ast = environment.parse(value)
-        except jinja2.TemplateSyntaxError as error:
+            # Introspection compiles the template, so it can raise
+            # TemplateAssertionError for an unknown filter or test.
+            undeclared = meta.find_undeclared_variables(ast)
+        except jinja2.TemplateError as error:
             raise ScafAnswerError(f"{label} has invalid Jinja: {error.message}") from error
-        unknown = meta.find_undeclared_variables(ast) - allowed
+        unknown = undeclared - allowed
         if unknown:
             names = ", ".join(sorted(unknown))
             raise ScafValidationError(f"{label} uses unknown variables: {names}")
