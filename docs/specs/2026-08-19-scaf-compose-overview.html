@@ -557,12 +557,14 @@ docker-data/</span></pre>
 __pycache__/
 .env</span>
 
+
 <span class="trace-docker">*.log
 docker-data/</span>
 
+
 <span class="trace-ci">.coverage</span></pre>
             </div>
-            <div class="callout result-note"><strong>Result:</strong> The header touches the first body directly. Scaf inserts separators only between processed source bodies.</div>
+            <div class="callout result-note"><strong>Result:</strong> The header touches the first body directly. Scaf inserts separators only between processed source bodies. Each body ends with its own newline, so the <code>"\n\n"</code> separator leaves two blank lines between groups.</div>
           </div>
         </div>
       </article>
