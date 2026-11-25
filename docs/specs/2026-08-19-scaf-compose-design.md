@@ -773,7 +773,7 @@ Supported to the extent Copier supports them during non-interactive rendering:
 
 Parent `_tasks`, if any, run once in the staged project after managed output and candidate `.scaf/` state are complete but before the create commit rename. They do not run during `scaf update` in v1.
 
-Copier 8.1 runs these tasks as ordinary subprocesses with the invoking user's permissions and the staging root as their working directory. Scaf does not sandbox them. Template authors must confine task writes to staging; writes to the destination by absolute path or to any other external path are unsupported and cannot be detected or rolled back reliably.
+Copier 8.1 renders the task commands while the parent Worker is alive. Scaf then runs the finalized commands itself as ordinary subprocesses, with the invoking user's permissions, the staging root as their working directory, and `STAGE=task` in their environment. A string task runs through the shell; a list task runs as an argument list without a shell. Scaf does not sandbox them. Template authors must confine task writes to staging; writes to the destination by absolute path or to any other external path are unsupported and cannot be detected or rolled back reliably.
 
 Tasks run at the sibling staging path `.<destination-name>.scaf-*`, which Scaf renames to the destination only after tasks finish. A task must not write that absolute path into project files. For example, a virtual environment that a task creates records the staging path and breaks after the rename. Templates should leave such steps, for example `uv sync`, to a documented post-create step.
 
