@@ -1240,7 +1240,9 @@ Set `StrictUndefined` before rendering. Use the task-free render path from Task 
 
 Render into `<temporary directory>/<folder_name>` so that Copier's `_folder_name` equals the final directory name. Callers pass the `create` destination name, the project directory name during `update`, and `scaf-preview` during `preview`.
 
-Before rendering, map static and `.jinja` source paths to final paths. If both forms target one output, raise `ScafValidationError`.
+Before rendering, map static and templated source paths to final paths with the parent's `_templates_suffix`, read through `worker.template.templates_suffix`. With a non-empty suffix, strip it from templated names. If a static file and a templated file target one output, raise `ScafValidationError`. With an empty suffix, treat every file as a template whose final path equals its source path, copy a file that fails UTF-8 decoding byte-for-byte, and skip the duplicate check.
+
+Add parent render tests for a `.tmpl` suffix, and for an empty suffix with a text file, a binary file, and a file named `notes.md.jinja` that keeps its name.
 
 - [ ] **Step 7: Implement deferred parent task execution**
 

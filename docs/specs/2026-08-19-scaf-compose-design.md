@@ -394,7 +394,14 @@ Rules:
 - A static parent file may be UTF-8 text or binary and is copied byte-for-byte.
 - A Jinja-templated parent file must be UTF-8 text; Scaf does not attempt to decode or template binary content.
 - Missing parent output is a validation error.
-- If both `template/<path>` and `template/<path>.jinja` would render the same final path, Scaf raises `ScafValidationError`.
+- If both `template/<path>` and `template/<path><suffix>` would render the same final path, Scaf raises `ScafValidationError`.
+
+The parent's `_templates_suffix` decides which files are templates, as in Copier 8.1. The suffix defaults to `.jinja`, and the examples in this document use that default.
+
+- **Non-empty suffix, such as `.jinja` or `.tmpl`:** a file whose name ends with the suffix is a Jinja template, and its final path drops the suffix. Every other file is static and copied byte-for-byte.
+- **Empty suffix (`_templates_suffix: ""`):** every parent file is a Jinja template, and its final path equals its source path. A file that is not valid UTF-8 is copied byte-for-byte instead, as Copier does. The duplicate-path rule above cannot apply. A file named `README.md.jinja` keeps that name in the output.
+
+In both cases, Scaf also renders Jinja in path segments, as Copier does, and classifies ownership by the final path.
 
 Use `render` for hand-authored merges, parent-owned replacements, and files derived from child context.
 
