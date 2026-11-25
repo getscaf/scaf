@@ -839,6 +839,8 @@ git commit -m "feat(compose): resolve Git sources"
 - Produces: `collect_parent_answers(source: ResolvedSource, supplied: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool) -> Mapping[str, object]`
 - Produces: `Copier81Compatibility.answer_environment(worker: copier.Worker) -> jinja2.Environment`
 - Produces: `evaluate_answer_mapping(child_name: str, mapping: Mapping[str, object], parent_answers: Mapping[str, object], environment: jinja2.Environment) -> Mapping[str, object]`
+- Produces: `Copier81Compatibility.secret_questions(worker: copier.Worker) -> frozenset[str]`
+- Produces: `storable_answers(answers: Mapping[str, object], secret: frozenset[str]) -> dict[str, object]`
 - Produces: `resolve_child_answers(child_name: str, source: ResolvedSource, supplied: Mapping[str, object]) -> Mapping[str, object]`
 - Consumes: `ResolvedSource`, `DependencySpec`, `ScafAnswerError`, and `ScafValidationError`
 
@@ -996,6 +998,15 @@ V1 exposes no additional static answer variables because the specification defin
 Construct every parent and child question Worker with `unsafe=True`. Build the answer-mapping environment with `answer_environment()` from the parent question Worker while that Worker is alive, and pass it to `evaluate_answer_mapping()` for each child. For child answers, use mapped data, `defaults=True`, and quiet mode. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
 
 Return only visible child question values. Do not return Copier metadata keys.
+
+Read each Worker's secret question names with `Copier81Compatibility.secret_questions()`, which returns `worker.template.secret_questions`. Keep the full answer sets for rendering. For storage, pass each set through `storable_answers()`, which drops the secret names. A child's secret set is its own secret questions plus every mapped answer whose expression refers to a secret parent question, found with `meta.find_undeclared_variables()`.
+
+Add tests for these cases:
+
+- A parent `secret: true` question and a `_secret_questions` entry are absent from the stored parent answers.
+- A child secret question is absent from the stored child answers.
+- A child answer mapped from a secret parent question is absent from the stored child answers.
+- During update, a secret parent question with a default uses it, and one without a default raises `ScafAnswerError` naming the question.
 
 - [ ] **Step 7: Run the answer tests**
 
@@ -1371,7 +1382,7 @@ children: {}
 }
 ```
 
-Also assert normalized manifest content, parent and child answer files, sorted paths, and no root `.copier-answers.yml`.
+Also assert normalized manifest content, parent and child answer files without secret answers, sorted paths, and no root `.copier-answers.yml`.
 
 Round-trip state through `load_project_state()`. Reject missing files, malformed YAML or JSON, unknown schema versions, duplicate managed paths, and unsafe paths.
 
@@ -1987,7 +1998,7 @@ Reject missing, malformed, or unsupported `.scaf/` state before source resolutio
 
 Assert that update never calls child-native `copier update`. Assert that child `_skip_if_exists` never changes full-candidate reconciliation.
 
-Reuse matching stored parent answers without prompting. Drop answers for removed parent questions. Resolve new active defaults. Raise `ScafAnswerError` for a new active question without a stored value or default.
+Reuse matching stored parent answers without prompting. Drop answers for removed parent questions. Resolve new active defaults. Raise `ScafAnswerError` for a new active question without a stored value or default. Secret parent questions have no stored value, so they follow the same default-or-error rule.
 
 - [ ] **Step 3: Run the update tests and verify failure**
 

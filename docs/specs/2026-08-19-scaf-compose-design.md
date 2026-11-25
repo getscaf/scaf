@@ -323,6 +323,14 @@ Each resolved child answer set is stored in:
 .scaf/answers/<child_name>.yml
 ```
 
+Scaf never stores secret answers, as Copier does not write them to its answers file. Scaf leaves out:
+
+1. every parent question that Copier treats as secret, through `secret: true` or `_secret_questions`;
+2. every child question that the child template treats as secret;
+3. every child answer whose mapping refers to a secret parent question.
+
+Scaf keeps these values in memory only while it renders. During `update`, a secret parent question takes its default. If it has no default, Scaf raises `ScafAnswerError` naming the question. Child answers are evaluated again from the parent answers during `update`, so a child answer left out under rule 3 never has to be stored.
+
 Scaf-composed projects do not write a root `.copier-answers.yml` for Compose state. A composed project is not a native Copier project for update purposes.
 
 ---
@@ -657,7 +665,7 @@ Records the full resolved Git commit object ID for the parent and every child us
 
 ### 10.3 `answers/`
 
-Stores resolved parent and child answer sets.
+Stores resolved parent and child answer sets, without secret answers (§5.3).
 
 ### 10.4 `state.json`
 
