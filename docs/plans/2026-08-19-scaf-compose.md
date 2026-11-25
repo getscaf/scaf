@@ -581,6 +581,14 @@ Cover these behaviors in one parameter table:
             "Duplicate dependency name 'python'",
         ),
         (
+            "dependencies: [{name: Parent, repo: a}]",
+            "reserved child name 'Parent'",
+        ),
+        (
+            "dependencies: [{name: python, repo: a}, {name: Python, repo: b}]",
+            "Duplicate dependency name 'Python'",
+        ),
+        (
             "dependencies: [{name: python, repo: a}]\ncompose:\n  x:\n    strategy: concat",
             "sources",
         ),
@@ -671,7 +679,7 @@ CONCAT_FIELDS = {"strategy", "sources", "separator", "dedupe_lines", "header"}
 PREFER_FIELDS = {"strategy", "source"}
 ```
 
-Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Reject `*` or `?` in literal compose keys. Accept `[` and `]` as literal characters, and test a key such as `frontend/pages/content/[[...slug]].tsx`. Keep dependency order and compose mapping order.
+Require child names to match `[A-Za-z_][A-Za-z0-9_]*`. Reject `parent` in any letter case, because `.scaf/answers/parent.yml` stores the parent answers. Compare names with `casefold()` when checking for duplicates, because `.scaf/answers/<name>.yml` files for `python` and `Python` collide on case-insensitive filesystems. Reject duplicate names, empty `concat.sources`, unknown children, invalid paths, reserved `.scaf/` targets, and invalid globs. Reject `*` or `?` in literal compose keys. Accept `[` and `]` as literal characters, and test a key such as `frontend/pages/content/[[...slug]].tsx`. Keep dependency order and compose mapping order.
 
 - [ ] **Step 5: Run the manifest tests**
 

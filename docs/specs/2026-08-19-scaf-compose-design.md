@@ -172,6 +172,8 @@ Required. A unique identifier for the child. It is used:
 - in `.scaf/answers/<name>.yml`
 - in compose rule `source` and `sources` fields
 
+Because the name is also a file name, Scaf rejects the name `parent` in any letter case, which `.scaf/answers/parent.yml` reserves for the parent answers. Names are unique without regard to letter case: `python` and `Python` in one manifest raise `ScafValidationError`.
+
 #### `repo`
 
 Required. A Git repository reference Scaf can resolve through Copier. Remote Git references and local Git repositories are valid. A local working tree must have a `HEAD` commit and no tracked, staged, or untracked changes; Scaf must not lock Copier's synthetic snapshot of a dirty tree.
@@ -804,7 +806,7 @@ Scaf Compose prioritizes clear, actionable errors. Errors should explain what ha
 Scaf validates:
 
 1. `_min_scaf_version` is valid and satisfied when present.
-2. Duplicate dependency names.
+2. Duplicate dependency names, compared without regard to letter case, and the reserved name `parent`.
 3. Unknown top-level or strategy-specific fields.
 4. Invalid paths and globs.
 5. Unknown compose strategies.
