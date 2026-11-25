@@ -145,6 +145,7 @@ The command modules are facades. Pure modules do not import command, network, pr
 - Create: `requirements-runtime.in`
 - Modify: `requirements.in`
 - Modify: `requirements.txt`
+- Modify: `.pre-commit-config.yaml`
 - Modify: `scaf`
 - Create: `src/scaf_cli/__init__.py`
 - Create: `src/scaf_cli/__main__.py`
@@ -236,7 +237,7 @@ dev = [
   "bandit==1.7.5",
   "black==24.3.0",
   "build>=1.2,<2",
-  "isort==5.10.1",
+  "isort==5.12.0",
   "pip-tools>=7.4,<8",
   "pre-commit>=4,<5",
   "ruff==0.0.290",
@@ -258,6 +259,8 @@ addopts = "-ra"
 ```
 
 Replace the current `copier`, `sh`, and `binaryornot` preamble in `requirements.in` with `-r requirements-runtime.in`. Keep the code-quality and test dependencies below it.
+
+Keep one formatter version in every place that runs it. Change the `black` rev in `.pre-commit-config.yaml` from `23.9.1` to `24.3.0`, and keep its `isort` rev at `5.12.0`. These match the dev-group pins above, so pre-commit and the CI `uv run black --check .` and `uv run isort --check-only .` steps format the same way. Pinning the dev group back to black 23.9.1 instead would conflict with the `black>=24.3` runtime bound.
 
 - [ ] **Step 4: Add the minimal package and parser**
 
@@ -334,7 +337,7 @@ Expected: 3 passed. The direct import command verifies the pinned runtime withou
 - [ ] **Step 7: Commit the application scaffold**
 
 ```bash
-git add pyproject.toml requirements-runtime.in requirements.in requirements.txt scaf src/scaf_cli tests/unit/test_cli_bootstrap.py
+git add pyproject.toml requirements-runtime.in requirements.in requirements.txt .pre-commit-config.yaml scaf src/scaf_cli tests/unit/test_cli_bootstrap.py
 git commit -m "feat(cli): scaffold Python application"
 ```
 
