@@ -1477,6 +1477,8 @@ Cover:
 - A parent without `scaf.yaml` uses normal Copier copy behavior.
 - A single-template fallback runs tasks and extensions with Copier trusted mode enabled.
 - A branch that moves after dispatch inspects it still renders the inspected commit in the single-template fallback.
+- A local Git template with an uncommitted edit and no release tag renders that edit in the single-template fallback, with or without `--vcs-ref HEAD`, as plain Copier does.
+- A local Git template with an uncommitted edit renders the tagged commit, without the edit, when `--vcs-ref` names a tag.
 - A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
 - A child task never runs.
@@ -1548,7 +1550,9 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 
 - [ ] **Step 5: Implement single-template fallback**
 
-Call Copier with the resolved parent locator, explicit destination, merged answer data, defaults setting, and `unsafe=True`. For a Git source, pass the full commit that dispatch inspected, `DispatchResult.source.commit`, as Copier's `vcs_ref`, not the requested `--vcs-ref`. Copier then renders the same commit that dispatch checked for `scaf.yaml`, even if the branch moves in between. For a non-Git local directory, pass no `vcs_ref`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
+Call Copier with the resolved parent locator, explicit destination, merged answer data, defaults setting, and `unsafe=True`. For a Git source, pass the full commit that dispatch inspected, `DispatchResult.source.commit`, as Copier's `vcs_ref`, not the requested `--vcs-ref`. Copier then renders the same commit that dispatch checked for `scaf.yaml`, even if the branch moves in between. For a non-Git local directory, pass no `vcs_ref`.
+
+Keep one exception so that local template work keeps today's behavior. For a local Git working tree whose selected ref is `HEAD`, pass `"HEAD"` instead of the commit. The selected ref is `HEAD` when the user passes `--vcs-ref HEAD`, or omits `--vcs-ref` and the repository has no release tag. Copier 8.1.0 includes uncommitted changes and shows `DirtyLocalWarning` only when `vcs_ref` is `None` or `"HEAD"` (`copier/vcs.py`). The race that the commit pin prevents does not apply here: dispatch has already rejected an uncommitted `scaf.yaml`, so the working tree it inspected is still a single-template source. Remote sources, tags, branches, and explicit commits keep the commit pin. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
 While Copier runs, put `sysconfig.get_path("scripts")` at the front of the task `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
 
