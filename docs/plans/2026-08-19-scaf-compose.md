@@ -2208,6 +2208,14 @@ Add an installer test that sets `PREFERRED_BIN_FOLDER` to a temporary directory 
 
 Convert `install.sh` to explicit Bash because it already uses arrays, `&>`, and `OSTYPE`. Use `#!/usr/bin/env bash` and `set -euo pipefail`.
 
+`set -u` and `set -e` change how the existing script behaves, so convert these patterns in the same commit:
+
+- Read optional environment variables with a default. The script reads `$DEBUG` (`install.sh:326`, `:328`, `:330`, `:338`) and checks `$PATH` and `$HOME` (`install.sh:28`) without one, so with `DEBUG` unset, as in the README's install command, `set -u` aborts with `DEBUG: unbound variable`. Use `${DEBUG:-}`, `${PATH:-}`, and `${HOME:-}`.
+- Replace `[ -n "$DEBUG" ] && echo ...` with a `debug()` function that prints only when `${DEBUG:-}` is non-empty and always returns 0. Under `set -e`, a false `&&` test as the last command of a function makes the function fail.
+- Add `|| true` to command substitutions whose `grep` may match nothing, such as the version detection at `install.sh:70` and `:92`. Under `pipefail`, a `grep` with no match fails the assignment and stops the script.
+
+Run the installer test with `DEBUG` unset, and once with `DEBUG=1`. Both must reach `uv tool install`.
+
 Remove the current ShellCheck classes before the commit:
 
 - Replace flag-bearing `echo` calls with `printf` (`SC3037`).
