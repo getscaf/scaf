@@ -720,6 +720,7 @@ git commit -m "feat(compose): parse strict manifests"
 - Produces: `ResolvedSource(locator: str, resolved_locator: str, root: Path, requested_ref: str | None, selector_kind: Literal["omitted", "branch", "tag", "commit"], selected_ref: str, commit: str)`
 - Produces: `normalize_copier_git_locator(locator: str) -> str`
 - Produces: `ResolutionWorkspace(root: Path)` as a context manager that owns every temporary clone and checkout
+- Produces: `ResolutionWorkspace.enter_context(manager: ContextManager[T]) -> T`, which exits `manager` when the workspace exits
 - Produces: `ResolutionWorkspace.resolve(locator: str, requested_ref: str | None, base: Path, require_clean: bool = True) -> ResolvedSource`
 - Produces: `ResolutionWorkspace.verify_locked_tag(source: ResolvedSource, selected_ref: str, commit: str) -> None`
 - Consumes: `ScafResolveError`
@@ -814,9 +815,9 @@ Treat explicit `HEAD` as a moving branch-kind selector with `selected_ref="HEAD"
 
 Use `locator` for persisted manifest identity. Before any Git call, strip a leading `git+` prefix and normalize Copier 8.1 `gh:` and `gl:` shortcuts in `sources.py`. Remove one optional slash, preserve an existing `.git` suffix, and add that suffix when absent. Use `resolved_locator` for clone and Git calls. Peel annotated tags to commit objects before locking.
 
-When `require_clean=False`, inspect only a separate checkout of the selected commit. Never inspect uncommitted local files through that result.
+When `require_clean=False`, inspect only a separate checkout of the selected commit. Never inspect uncommitted local files through that result. The local `HEAD` fallback in Task 10 is the only dispatch path that reads uncommitted files, and it reads them through Copier's snapshot, not through `resolve()`.
 
-Create every remote clone and detached local checkout under `ResolutionWorkspace.root`. A `ResolvedSource.root` is valid only before workspace exit. Canonical local source repositories are never workspace-owned.
+Create every remote clone and detached local checkout under `ResolutionWorkspace.root`. The one temporary directory outside it is the Copier template snapshot for a local `HEAD` fallback (Task 10). Copier creates that directory itself, so the workspace owns it through `enter_context()` instead. A `ResolvedSource.root` is valid only before workspace exit. Canonical local source repositories are never workspace-owned.
 
 - [ ] **Step 6: Run the source tests**
 
@@ -849,7 +850,6 @@ git commit -m "feat(compose): resolve Git sources"
 - Produces: `Copier81Compatibility.render_without_tasks(worker: copier.Worker) -> None`
 - Produces: `Copier81Compatibility.finalize_tasks(worker: copier.Worker) -> tuple[DeferredTask, ...]`
 - Produces: `collect_parent_answers(source: ResolvedSource, supplied: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool) -> Mapping[str, object]`
-- Produces: `Copier81Compatibility.template_snapshot(worker: copier.Worker) -> Path`
 - Produces: `Copier81Compatibility.answer_environment(worker: copier.Worker) -> jinja2.Environment`
 - Produces: `evaluate_answer_mapping(child_name: str, mapping: Mapping[str, object], parent_answers: Mapping[str, object], environment: jinja2.Environment) -> Mapping[str, object]`
 - Produces: `Copier81Compatibility.secret_questions(worker: copier.Worker) -> frozenset[str]`
@@ -1488,16 +1488,19 @@ git commit -m "feat(compose): stage project state"
 - Create: `src/scaf_cli/candidate.py`
 - Create: `src/scaf_cli/create.py`
 - Modify: `src/scaf_cli/cli.py`
+- Modify: `src/scaf_cli/copier_compat.py`
 - Create: `tests/integration/test_create_command.py`
 - Create: `tests/integration/test_single_template_fallback.py`
 
 **Interfaces:**
 - Produces: `AnswerInputs(values: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool)`
-- Produces: `DispatchResult(mode: Literal["single", "compose"], source: ResolvedSource | None, local_root: Path)`
+- Produces: `FallbackRequest(destination: Path, data: Mapping[str, object], defaults: bool)`
+- Produces: `DispatchResult(mode: Literal["single", "compose"], source: ResolvedSource | None, local_root: Path, worker: copier.Worker | None)`
+- Produces: `Copier81Compatibility.template_snapshot(worker: copier.Worker) -> Path`
 - Produces: `CandidateRequest(workspace: ResolutionWorkspace, parent: ResolvedSource, answers: AnswerInputs)`
 - Produces: `CompositionAnalysis(parent: ResolvedSource, manifest: ComposeManifest, parent_answers: Mapping[str, object], children: tuple[ChildRender, ...], parent_render: ParentRender, classifications: Mapping[str, Mapping[str, tuple[str, ...]]], ownership: OwnershipAnalysis)`
 - Produces: `ComposeCandidate(analysis: CompositionAnalysis, files: Mapping[str, FileRecord], state: ProjectState)`
-- Produces: `resolve_dispatch(workspace: ResolutionWorkspace, parent_repo: str, vcs_ref: str | None, invocation_dir: Path) -> DispatchResult`
+- Produces: `resolve_dispatch(workspace: ResolutionWorkspace, parent_repo: str, vcs_ref: str | None, invocation_dir: Path, fallback: FallbackRequest) -> DispatchResult`
 - Produces: `resolve_composition(request: CandidateRequest) -> CompositionAnalysis`
 - Produces: `build_compose_candidate(analysis: CompositionAnalysis) -> ComposeCandidate`
 - Produces: `CreateOptions(parent_repo: str, destination: Path, vcs_ref: str | None, answers_file: Path | None, defaults: bool, injected_answers: Mapping[str, object])`
@@ -1522,6 +1525,7 @@ Cover:
 - A branch that moves after dispatch inspects it still renders the inspected commit in the single-template fallback.
 - A local Git template with an uncommitted edit and no release tag renders that edit in the single-template fallback, with or without `--vcs-ref HEAD`, as plain Copier does.
 - A local Git template with an uncommitted edit renders the tagged commit, without the edit, when `--vcs-ref` names a tag.
+- With `TMPDIR` set to a test directory, no `copier.vcs.clone.*` directory remains after a local `HEAD` fallback succeeds, after one fails in a task, and after dispatch hands a local `HEAD` source to Compose.
 - A local Git template that gains a committed `scaf.yaml` after dispatch has taken its snapshot still renders the snapshot through the fallback, with no `scaf.yaml` in the output. Inject the commit between `template_snapshot()` and `run_copy()`.
 - A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
@@ -1554,6 +1558,11 @@ Implement reusable candidate construction before destination mutation:
 
 ```text
 resolve_dispatch
+0. For a local Git working tree whose selected ref is `HEAD`, build the
+   fallback Worker from `fallback`, enter it with `workspace.enter_context()`,
+   and check `scaf.yaml` only in `template_snapshot(worker)`. If the snapshot
+   has no `scaf.yaml`, return single mode with that Worker. Otherwise
+   continue with step 2; the workspace still removes the snapshot.
 1. For a non-Git local source, inspect the working directory directly.
 2. Reject a dirty local working tree that contains an uncommitted scaf.yaml.
 3. For a Git or remote source, resolve the requested ref first.
@@ -1600,9 +1609,11 @@ Keep one exception so that local template work keeps today's behavior. A local G
 
 Passing `"HEAD"` to a fresh Copier call would read the working tree a second time, after dispatch. Another process could commit a `scaf.yaml` in between, and Copier would then render a Compose parent without `.scaf/` state. So take one snapshot and use it for both steps:
 
-1. Build the Copier `Worker` with the local path and `vcs_ref="HEAD"`.
-2. Call `Copier81Compatibility.template_snapshot(worker) -> Path`, which returns `worker.template.local_abspath`. Copier copies the working tree, including uncommitted changes, into that directory once; `Worker.template` and `Template.local_abspath` are cached properties in 8.1.0.
-3. Run dispatch's `scaf.yaml` check on that snapshot. If it has no `scaf.yaml`, call `run_copy()` on the same `Worker`, which renders the same snapshot. If it has one, drop the `Worker` and continue with normal Compose resolution, which requires a clean tree and pins a commit.
+1. In `resolve_dispatch()` step 0, build the Copier `Worker` with the local path, `vcs_ref="HEAD"`, and the destination, data, and defaults from `FallbackRequest`. Enter it with `workspace.enter_context(worker)`. Copier removes its `copier.vcs.clone.*` directory only in `Worker.__exit__()`; `Worker.run_copy()` does not clean up.
+2. Call `Copier81Compatibility.template_snapshot(worker)`, which returns `worker.template.local_abspath`. Copier copies the working tree, including uncommitted changes, into that directory once; `Worker.template` and `Template.local_abspath` are cached properties in 8.1.0.
+3. Check `scaf.yaml` on that snapshot only. If it has none, return `DispatchResult(mode="single", worker=worker)`, and the fallback calls `run_copy()` on that Worker, which renders the same snapshot. If it has one, continue with normal Compose resolution, which requires a clean tree and pins a commit. The workspace exits the Worker either way.
+
+For every other fallback source, `DispatchResult.worker` is `None`, and the fallback builds its Worker with the commit pin above and enters it with `with`.
 
 The original path stays Copier's `src_path`, so Copier records it, not the snapshot. Remote sources, tags, branches, and explicit commits keep the commit pin. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
@@ -1631,7 +1642,7 @@ Expected: all tests pass.
 - [ ] **Step 8: Commit create orchestration**
 
 ```bash
-git add src/scaf_cli/candidate.py src/scaf_cli/create.py src/scaf_cli/cli.py tests/integration/test_create_command.py tests/integration/test_single_template_fallback.py
+git add src/scaf_cli/candidate.py src/scaf_cli/create.py src/scaf_cli/cli.py src/scaf_cli/copier_compat.py tests/integration/test_create_command.py tests/integration/test_single_template_fallback.py
 git commit -m "feat(compose): create composed projects"
 ```
 
