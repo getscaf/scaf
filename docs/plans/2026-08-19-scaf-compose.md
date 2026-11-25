@@ -883,6 +883,7 @@ Test these exact cases:
 - A mapping can use an Ansible filter such as `regex_replace` and a filter from a parent `_jinja_extensions` fixture.
 - A mapping works with parent `_envops` that change the variable delimiters.
 - `{{ features | select('ne', 'docs') }}` and `{{ range(2) }}` return lists that can be read twice and stored with `yaml.safe_dump`. A fixture filter that returns a set raises `ScafAnswerError` naming the child and the key.
+- A lazy filter that fails only while its result is read, such as `{{ items | select('missing_test') }}` or `{{ items | map('missing_filter') }}`, raises `ScafAnswerError` naming the child and the key.
 - An unknown filter such as `{{ project_name | misspelled_filter }}` and an unknown test such as `{% if project_name is misspelled_test %}x{% endif %}` raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A Jinja syntax error, an evaluation error such as `{{ python_version + 1 }}`, and an undefined attribute such as `{{ project_name.missing }}` each raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A monkeypatched incompatible Copier version fails before any private Worker call.
@@ -990,13 +991,15 @@ def evaluate_answer_mapping(
                 evaluated = expression(**parent_answers)
             else:
                 evaluated = environment.from_string(value).render(**parent_answers)
+            if isinstance(evaluated, jinja2.Undefined):
+                raise ScafAnswerError(f"{label} is undefined: {value}")
+            # Filters such as select and map are lazy: their errors appear
+            # only while storable_value() reads the result.
+            result[name] = storable_value(label, evaluated)
         except ScafError:
             raise
         except Exception as error:
             raise ScafAnswerError(f"{label} failed: {type(error).__name__}: {error}") from error
-        if isinstance(evaluated, jinja2.Undefined):
-            raise ScafAnswerError(f"{label} is undefined: {value}")
-        result[name] = storable_value(label, evaluated)
     return result
 
 
