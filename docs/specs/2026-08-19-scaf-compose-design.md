@@ -933,7 +933,7 @@ For `create`, `<destination>` is always explicit, and Scaf raises `ScafValidatio
 
 The single-template fallback preserves the current trusted Copier behavior. It enables template tasks and extensions without a separate `--trust` option. Scaf also keeps supplying `black` and `isort` to template and parent tasks, as the current launcher does, because existing templates run them.
 
-Legacy project-creation syntax remains an adapter to `scaf create`. Legacy failures now use exit code 2 instead of exit code 1.
+Legacy project-creation syntax remains an adapter to `scaf create`. Legacy failures now use exit code 2 instead of exit code 1. Scaf calls Copier in-process, so it turns Copier's user-facing errors into Scaf errors instead of tracebacks, in both modes. A Copier `UserMessageError` (for example an unsupported `_min_copier_version` or a missing `_jinja_extensions` module) or `UnsafeTemplateError`, and Ctrl-C during a prompt or render, raise `ScafTemplateError` with Copier's message. Ctrl-C gives the message `Execution stopped by user`, as Copier's own CLI does.
 
 The legacy `--upgrade` flag runs `uv tool install --force` from the Scaf `main` branch. The installer and `--upgrade` keep honoring `PREFERRED_BIN_FOLDER` by passing it to uv as `UV_TOOL_BIN_DIR`. The legacy `--uninstall` flag runs `uv tool uninstall scaf`. It also removes a pre-uv single-file installation from `${PREFERRED_BIN_FOLDER:-$HOME/.local/bin}/scaf` when present.
 

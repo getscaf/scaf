@@ -849,6 +849,7 @@ git commit -m "feat(compose): resolve Git sources"
 - Produces: `Copier81Compatibility.collect_answers(worker: copier.Worker) -> Mapping[str, object]`
 - Produces: `Copier81Compatibility.render_without_tasks(worker: copier.Worker) -> None`
 - Produces: `Copier81Compatibility.finalize_tasks(worker: copier.Worker) -> tuple[DeferredTask, ...]`
+- Produces: `Copier81Compatibility.translate_errors() -> ContextManager[None]`
 - Produces: `collect_parent_answers(source: ResolvedSource, supplied: Mapping[str, object], defaults: bool, interactive: bool, ignore_removed: bool) -> Mapping[str, object]`
 - Produces: `Copier81Compatibility.answer_environment(worker: copier.Worker) -> jinja2.Environment`
 - Produces: `evaluate_answer_mapping(child_name: str, mapping: Mapping[str, object], parent_answers: Mapping[str, object], environment: jinja2.Environment) -> Mapping[str, object]`
@@ -1035,6 +1036,23 @@ Catch broad `Exception` only around evaluation of the template-supplied expressi
 V1 exposes no additional static answer variables because the specification defines none by name.
 
 - [ ] **Step 6: Resolve child defaults and `when:` with Copier**
+
+Wrap every Copier call in `Copier81Compatibility.translate_errors()`: the parent and child question Workers here, the parent render in Task 7, and the single-template fallback in Task 10. It turns errors into Scaf errors as Copier's CLI `handle_exceptions` does, because Scaf calls Copier in-process and no longer gets that handling:
+
+```python
+@contextmanager
+def translate_errors() -> Iterator[None]:
+    try:
+        yield
+    except ScafError:
+        raise
+    except KeyboardInterrupt as error:  # includes CopierAnswersInterrupt
+        raise ScafTemplateError("Execution stopped by user") from error
+    except (copier.errors.UserMessageError, copier.errors.UnsafeTemplateError) as error:
+        raise ScafTemplateError("\n".join(map(str, error.args))) from error
+```
+
+Test that Ctrl-C at a parent prompt, a parent with `_min_copier_version: "99.0.0"`, and a parent whose `_jinja_extensions` names a missing module each raise `ScafTemplateError` with no traceback.
 
 Construct every parent and child question Worker with `unsafe=True`. Build the answer-mapping environment with `answer_environment()` from the parent question Worker while that Worker is alive, and pass it to `evaluate_answer_mapping()` for each child. For child answers, use mapped data, `defaults=True`, and quiet mode. Call `Copier81Compatibility.collect_answers()` without rendering. Catch Copier validation errors and the required-question `ValueError`. Convert them to `ScafAnswerError` with child and question names.
 
@@ -1526,6 +1544,7 @@ Cover:
 - A local Git template with an uncommitted edit and no release tag renders that edit in the single-template fallback, with or without `--vcs-ref HEAD`, as plain Copier does.
 - A local Git template with an uncommitted edit renders the tagged commit, without the edit, when `--vcs-ref` names a tag.
 - With `TMPDIR` set to a test directory, no `copier.vcs.clone.*` directory remains after a local `HEAD` fallback succeeds, after one fails in a task, and after dispatch hands a local `HEAD` source to Compose.
+- In the single-template fallback, Ctrl-C at a prompt, `_min_copier_version: "99.0.0"`, and a missing `_jinja_extensions` module each exit with code 2 and a `ScafTemplateError` message, with no traceback.
 - A local Git template that gains a committed `scaf.yaml` after dispatch has taken its snapshot still renders the snapshot through the fallback, with no `scaf.yaml` in the output. Inject the commit between `template_snapshot()` and `run_copy()`.
 - A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
