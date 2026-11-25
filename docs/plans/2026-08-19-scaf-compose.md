@@ -878,6 +878,7 @@ Test these exact cases:
 - A child mapping cannot access child output or an unknown variable.
 - A mapping can use an Ansible filter such as `regex_replace` and a filter from a parent `_jinja_extensions` fixture.
 - A mapping works with parent `_envops` that change the variable delimiters.
+- `{{ features | select('ne', 'docs') }}` and `{{ range(2) }}` return lists that can be read twice and stored with `yaml.safe_dump`. A fixture filter that returns a set raises `ScafAnswerError` naming the child and the key.
 - An unknown filter such as `{{ project_name | misspelled_filter }}` and an unknown test such as `{% if project_name is misspelled_test %}x{% endif %}` raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A Jinja syntax error, an evaluation error such as `{{ python_version + 1 }}`, and an undefined attribute such as `{{ project_name.missing }}` each raise `ScafAnswerError` that names the child and the key, with no traceback.
 - A monkeypatched incompatible Copier version fails before any private Worker call.
@@ -991,9 +992,33 @@ def evaluate_answer_mapping(
             raise ScafAnswerError(f"{label} failed: {type(error).__name__}: {error}") from error
         if isinstance(evaluated, jinja2.Undefined):
             raise ScafAnswerError(f"{label} is undefined: {value}")
-        result[name] = evaluated
+        result[name] = storable_value(label, evaluated)
     return result
+
+
+def storable_value(label: str, value: object) -> object:
+    """Return a YAML-safe copy, or raise ScafAnswerError."""
+    if isinstance(value, str):
+        # Plain str: yaml.safe_dump rejects subclasses such as markupsafe.Markup.
+        return str(value)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, Mapping):
+        items = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ScafAnswerError(f"{label} has a non-string key: {key!r}")
+            items[key] = storable_value(label, item)
+        return items
+    if isinstance(value, (list, tuple, range, Iterator)):
+        # Jinja filters such as select and map return one-shot generators.
+        return [storable_value(label, item) for item in value]
+    raise ScafAnswerError(
+        f"{label} returned {type(value).__name__}, which cannot be stored as an answer"
+    )
 ```
+
+`storable_value()` turns generators, iterators, ranges, and tuples into lists, so the child gets a value it can read more than once and `.scaf/answers/<child>.yml` can store it. It also turns `str` subclasses such as `markupsafe.Markup` into plain strings. Any other type, such as a set, raises `ScafAnswerError` naming the child and key. Import `Iterator` and `Mapping` from `collections.abc`.
 
 Do not use `jinja2.nativetypes.NativeEnvironment`. Its `render()` parses string results as Python literals, so a parent string `"3.10"` would become the float `3.1`. `compile_expression()` returns the value of the expression without converting it to text or reparsing it.
 
