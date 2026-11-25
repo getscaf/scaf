@@ -620,7 +620,7 @@ Parent templates may register additional Jinja filters through Copier's extensio
 
 ```yaml
 # copier.yaml
-_extensions:
+_jinja_extensions:
   - my_template.jinja_extensions.YAMLMergeExtension
 ```
 
