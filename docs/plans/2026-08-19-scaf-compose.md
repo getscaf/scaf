@@ -1450,6 +1450,7 @@ Cover:
 - A dirty local Git parent with uncommitted `scaf.yaml` raises `ScafResolveError`.
 - A parent without `scaf.yaml` uses normal Copier copy behavior.
 - A single-template fallback runs tasks and extensions with Copier trusted mode enabled.
+- A branch that moves after dispatch inspects it still renders the inspected commit in the single-template fallback.
 - A single-template fallback task and a Compose parent task that run `black --version` and `isort --version` succeed when the invoking `PATH` contains neither tool.
 - Compose child and parent extensions run with Copier trusted mode enabled.
 - A child task never runs.
@@ -1521,7 +1522,7 @@ Snapshot every staged `.scaf/` path, byte sequence, and mode before parent tasks
 
 - [ ] **Step 5: Implement single-template fallback**
 
-Call Copier with the resolved parent locator, explicit destination, parent `--vcs-ref`, merged answer data, defaults setting, and `unsafe=True`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
+Call Copier with the resolved parent locator, explicit destination, merged answer data, defaults setting, and `unsafe=True`. For a Git source, pass the full commit that dispatch inspected, `DispatchResult.source.commit`, as Copier's `vcs_ref`, not the requested `--vcs-ref`. Copier then renders the same commit that dispatch checked for `scaf.yaml`, even if the branch moves in between. For a non-Git local directory, pass no `vcs_ref`. This setting preserves the current single-template `--trust` behavior for tasks and extensions.
 
 While Copier runs, put `sysconfig.get_path("scripts")` at the front of the task `PATH` and restore the previous value afterward. Template tasks then find the `black` and `isort` that Scaf installs, as they do with the current launcher.
 
