@@ -922,7 +922,7 @@ scaf update [--vcs-ref <ref>]
 scaf status
 ```
 
-For `create`, `<destination>` is always explicit and follows the assembly rules in §8.5 for both Compose parents and the existing single-template fallback. `--vcs-ref` selects the parent branch, tag, or commit; when omitted, the parent uses Copier 8.1's highest-release-or-`HEAD` default. On `update`, `--vcs-ref` replaces the stored requested parent ref only after a successful reconciliation.
+For `create`, `<destination>` is always explicit, and Scaf raises `ScafValidationError` if it already exists. For a Compose parent, the destination follows the staging and rename rules in §8.5. The single-template fallback does not stage: Scaf calls Copier on the destination directly, as the current launcher does, so `_folder_name` and the task working directory stay the real project directory. Copier removes the destination it created if rendering or a task fails, because `cleanup_on_error` defaults to true in Copier 8.1.0. `--vcs-ref` selects the parent branch, tag, or commit; when omitted, the parent uses Copier 8.1's highest-release-or-`HEAD` default. On `update`, `--vcs-ref` replaces the stored requested parent ref only after a successful reconciliation.
 
 The single-template fallback preserves the current trusted Copier behavior. It enables template tasks and extensions without a separate `--trust` option. Scaf also keeps supplying `black` and `isort` to template and parent tasks, as the current launcher does, because existing templates run them.
 
