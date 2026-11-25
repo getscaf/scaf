@@ -724,6 +724,7 @@ Cover:
 - A relative child path uses the resolved parent root and keeps its normalized parent-relative locator.
 - An absolute local path remains canonical.
 - `gh:owner/repo` and `gh:/owner/repo.git` both normalize to `https://github.com/owner/repo.git`.
+- `git+https://example.com/owner/repo.git` normalizes to `https://example.com/owner/repo.git`, as Copier 8.1 strips the `git+` prefix (`copier/vcs.py`). Plain Git rejects the prefixed form.
 - `gl:owner/repo` and `gl:/owner/repo.git` both normalize to `https://gitlab.com/owner/repo.git`.
 - Shortcut sources keep the original `locator` and use the expanded URL as `resolved_locator`.
 - A `file://` bare remote exercises clone and remote-ref handling without network access.
@@ -788,7 +789,7 @@ def highest_release_tag(tags: Mapping[str, str]) -> str | None:
 
 Treat explicit `HEAD` as a moving branch-kind selector with `selected_ref="HEAD"`. Store full commit object IDs.
 
-Use `locator` for persisted manifest identity. Before any Git call, normalize Copier 8.1 `gh:` and `gl:` shortcuts in `sources.py`. Remove one optional slash, preserve an existing `.git` suffix, and add that suffix when absent. Use `resolved_locator` for clone and Git calls. Peel annotated tags to commit objects before locking.
+Use `locator` for persisted manifest identity. Before any Git call, strip a leading `git+` prefix and normalize Copier 8.1 `gh:` and `gl:` shortcuts in `sources.py`. Remove one optional slash, preserve an existing `.git` suffix, and add that suffix when absent. Use `resolved_locator` for clone and Git calls. Peel annotated tags to commit objects before locking.
 
 When `require_clean=False`, inspect only a separate checkout of the selected commit. Never inspect uncommitted local files through that result.
 
