@@ -260,7 +260,7 @@ addopts = "-ra"
 
 Replace the current `copier`, `sh`, and `binaryornot` preamble in `requirements.in` with `-r requirements-runtime.in`. Keep the code-quality and test dependencies below it.
 
-Keep one formatter version in every place that runs it. Change the `black` rev in `.pre-commit-config.yaml` from `23.9.1` to `24.3.0`, and keep its `isort` rev at `5.12.0`. These match the dev-group pins above, so pre-commit and the CI `uv run black --check .` and `uv run isort --check-only .` steps format the same way. Pinning the dev group back to black 23.9.1 instead would conflict with the `black>=24.3` runtime bound.
+Keep one formatter version in every place that runs it. Change the `black` rev in `.pre-commit-config.yaml` from `23.9.1` to `24.3.0`, and keep its `isort` rev at `5.12.0`. In `requirements.in`, change `isort==5.10.1` to `isort==5.12.0` and recompile `requirements.txt`. These match the dev-group pins above, so pre-commit and the CI `uv run black --check .` and `uv run isort --check-only .` steps format the same way. Pinning the dev group back to black 23.9.1 instead would conflict with the `black>=24.3` runtime bound.
 
 - [ ] **Step 4: Add the minimal package and parser**
 
